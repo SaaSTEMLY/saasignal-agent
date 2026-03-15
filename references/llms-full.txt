@@ -1,2 +1,1279 @@
-This file is auto-populated by `bun run saasignal-agent/scripts/sync.ts`.
-Run the sync script to fetch the latest content from https://api.saasignal.saastemly.com/llms-full.txt
+# SaaSignal API
+
+> Serverless infrastructure API — KV, Locks, Sketches, Channels, Jobs, Workflows, Webhooks, Storage, Media, AI, and Decisioning primitives (Search, Matching, Ranking) on Cloudflare. Includes Logistics (geospatial, tracking, routing) and Delivery (order, driver, zone management) modules.
+
+Base: https://api.saasignal.saastemly.com
+Docs: [HTML](https://api.saasignal.saastemly.com/) | [OpenAPI JSON](https://api.saasignal.saastemly.com/api/openapi.json)
+
+## Auth Methods
+- KEY: `X-API-Key: sk_<appId>_<hex>` via POST /api-keys
+
+## Conventions
+- Auth: JWT = Bearer token, KEY = API Key, JWT|KEY = either, NONE = no auth
+- `*` after field name = required, all fields string unless noted with `:type`
+- Common errors: 400/401/404 return `{success:false, error}`
+
+---
+
+## Infra > KV
+Global key-value store backed by Cloudflare KV.
+
+### GET /infra/kv/{key} - Get a value by key | KEY
+Path: :key
+200: `{key*, value*, expires_at*}`
+
+### PUT /infra/kv/{key} - Set a key-value pair | KEY
+Path: :key
+Body: `{value*, ttl:integer, if_not_exists:boolean}`
+200: `{key*, value*, expires_at*}`
+
+### DELETE /infra/kv/{key} - Delete a key | KEY
+Path: :key
+
+### POST /infra/kv/{key}/increment - Atomically increment a numeric value | KEY
+Path: :key
+Body: `{delta:number, ttl:integer}`
+200: `{key*, value*:number}`
+
+### GET /infra/kv - Scan keys by prefix | KEY
+Query: ?prefix ?cursor ?limit:integer
+200: `{keys*:string[], next_cursor*}`
+
+### POST /infra/kv - Execute batch operations | KEY
+Body: `{ops*:[{op*, key*, value, ttl:integer}]}`
+200: `{results*:[{key*, value*, status*}]}`
+
+## Infra > Locks
+Distributed mutexes backed by Cloudflare Durable Objects for mutually exclusive access to keyed resources.
+
+### POST /infra/locks/{key}/acquire - Acquire a lock | KEY
+Path: :key
+Body: `{ttl_ms*:integer, holder_id}`
+200: `{key*, locked*:boolean, token*, expires_at*}`
+
+### POST /infra/locks/{key}/release - Release a lock | KEY
+Path: :key
+Body: `{token*}`
+200: `{key*, released*:boolean}`
+
+### POST /infra/locks/{key}/renew - Renew a lock | KEY
+Path: :key
+Body: `{token*, ttl_ms*:integer}`
+200: `{key*, locked*:boolean, expires_at*}`
+
+### GET /infra/locks/{key} - Check lock status | KEY
+Path: :key
+200: `{key*, locked*:boolean, expires_at*, holder_id}`
+
+## Infra > Sketches
+Probabilistic analytics primitives such as HyperLogLog and Count-Min Sketch for high-throughput counting.
+
+### POST /infra/sketches/hll/{key}/add - Add elements to a HyperLogLog | KEY
+Path: :key
+Body: `{elements*:string[]}`
+200: `{key*, updated*:boolean}`
+
+### GET /infra/sketches/hll/{key}/count - Estimate HyperLogLog count | KEY
+Path: :key
+200: `{key*, count*:integer}`
+
+### POST /infra/sketches/hll/merge - Merge HyperLogLogs | KEY
+Body: `{dest_key*, source_keys*:string[]}`
+200: `{dest_key*, count*:integer}`
+
+### POST /infra/sketches/cms/{key}/increment - Increment Count-Min Sketch frequencies | KEY
+Path: :key
+Body: `{elements*:[{item*, count:integer}]}`
+200: `{key*, updated*:boolean}`
+
+### GET /infra/sketches/cms/{key}/estimate - Estimate Count-Min Sketch frequency | KEY
+Path: :key
+Query: ?item*
+200: `{key*, item*, estimated_count*:integer}`
+
+## Infra > Channels
+Real-time pub/sub powered by Cloudflare Durable Objects.
+
+### POST /infra/channels/{channel}/publish - Publish an event to a channel | KEY
+Path: :channel
+Body: `{event*, data*, id, user_id}`
+
+### POST /infra/channels/publish - Batch publish events | KEY
+Body: `{messages*:[{channel*, event*, data*, id, user_id}]}`
+
+### GET /infra/channels/{channel}/subscribe - Subscribe to a channel | KEY
+Path: :channel
+Query: ?last_event_id
+
+### GET /infra/channels/{channel}/presence - Get channel presence | KEY
+Path: :channel
+200: `{channel*, count*:number, users*:[{user_id*, joined_at*}]}`
+
+### GET /infra/channels/{channel}/history - Get channel message history | KEY
+Path: :channel
+Query: ?limit:integer ?before
+200: `{channel*, messages*:[{id*, event*, data*, timestamp*}]}`
+
+## Infra > Jobs
+Unified task, queue, and cron primitive.
+
+### POST /infra/jobs - Create a job | KEY
+Body: `{trigger*, handler, payload*, name, timeout:integer, max_attempts:integer, backoff, priority:integer, callback_url, idempotency_key, enabled:boolean}`
+
+### GET /infra/jobs - List jobs | KEY
+Query: ?status ?trigger_type ?queue ?limit:integer ?cursor
+200: `{jobs*:[{id*, name*, trigger*, handler*, payload*, result*, status*, enabled*:boolean, priority*:number, attempt*:number, max_attempts*:number, timeout*:number, idempotency_key*, error*, created_at*, run_at*, next_run_at*, last_run_at*, claimed_until*, completed_at*}], next_cursor*}`
+
+### POST /infra/jobs/batch - Batch create jobs | KEY
+Body: `{jobs*:[{trigger*, handler, payload*, name, timeout:integer, max_attempts:integer, backoff, priority:integer, callback_url, idempotency_key, enabled:boolean}]}`
+
+### POST /infra/jobs/claim - Claim a pull job | KEY
+Body: `{queue*, count:integer, visibility_timeout:integer}`
+200: `[{id*, name*, trigger*, handler*, payload*, result*, status*, enabled*:boolean, priority*:number, attempt*:number, max_attempts*:number, timeout*:number, idempotency_key*, error*, created_at*, run_at*, next_run_at*, last_run_at*, claimed_until*, completed_at*}]`
+
+### GET /infra/jobs/{job_id} - Get a job | KEY
+Path: :job_id
+200: `{id*, name*, trigger*, handler*, payload*, result*, status*, enabled*:boolean, priority*:number, attempt*:number, max_attempts*:number, timeout*:number, idempotency_key*, error*, created_at*, run_at*, next_run_at*, last_run_at*, claimed_until*, completed_at*}`
+
+### PATCH /infra/jobs/{job_id} - Update a job | KEY
+Path: :job_id
+Body: `{handler, payload, enabled:boolean, trigger:{schedule, timezone, delay_seconds:integer}}`
+200: `{id*, name*, trigger*, handler*, payload*, result*, status*, enabled*:boolean, priority*:number, attempt*:number, max_attempts*:number, timeout*:number, idempotency_key*, error*, created_at*, run_at*, next_run_at*, last_run_at*, claimed_until*, completed_at*}`
+
+### DELETE /infra/jobs/{job_id} - Cancel a job | KEY
+Path: :job_id
+200: `{id*, name*, trigger*, handler*, payload*, result*, status*, enabled*:boolean, priority*:number, attempt*:number, max_attempts*:number, timeout*:number, idempotency_key*, error*, created_at*, run_at*, next_run_at*, last_run_at*, claimed_until*, completed_at*}`
+
+### POST /infra/jobs/{job_id}/ack - Acknowledge a claimed job | KEY
+Path: :job_id
+Body: `{status*, result, error}`
+200: `{id*, name*, trigger*, handler*, payload*, result*, status*, enabled*:boolean, priority*:number, attempt*:number, max_attempts*:number, timeout*:number, idempotency_key*, error*, created_at*, run_at*, next_run_at*, last_run_at*, claimed_until*, completed_at*}`
+
+### POST /infra/jobs/{job_id}/trigger - Manually trigger a scheduled job | KEY
+Path: :job_id
+
+### POST /infra/jobs/{job_id}/retry - Retry a failed job | KEY
+Path: :job_id
+200: `{id*, name*, trigger*, handler*, payload*, result*, status*, enabled*:boolean, priority*:number, attempt*:number, max_attempts*:number, timeout*:number, idempotency_key*, error*, created_at*, run_at*, next_run_at*, last_run_at*, claimed_until*, completed_at*}`
+
+### GET /infra/jobs/{job_id}/runs - List job runs | KEY
+Path: :job_id
+Query: ?limit:integer ?cursor
+200: `{runs*:[{id*, job_id*, scheduled_at*, started_at*, completed_at*, status*, duration_ms*, handler_status*, error*}], next_cursor*}`
+
+## Infra > Workflows
+DAG-based orchestration on top of Jobs for resumable multi-step processes and compensating flows.
+
+### POST /infra/workflows/blueprints - Create a workflow blueprint | KEY
+Body: `{name*, description, steps*:[{id*, job_trigger*:{name, trigger*, handler, timeout:integer, max_attempts:integer, backoff, priority:integer, callback_url, enabled:boolean}, payload_template, depends_on:string[], catch}], max_duration_sec:integer}`
+200: `{id*, project_id*, name*, description*, steps*:[{id*, job_trigger*:{name, trigger*, handler, timeout:integer, max_attempts:integer, backoff, priority:integer, callback_url, enabled:boolean}, payload_template, depends_on:string[], catch}], max_duration_sec*, created_at*}`
+
+### GET /infra/workflows/blueprints - List workflow blueprints | KEY
+Query: ?limit:integer ?cursor
+200: `{blueprints*:[{id*, name*, created_at*}], next_cursor*}`
+
+### POST /infra/workflows/blueprints/{blueprint_id}/trigger - Trigger a workflow execution | KEY
+Path: :blueprint_id
+Body: `{input_data:{}, idempotency_key}`
+200: `{execution_id*, blueprint_id*, status*, started_at*}`
+
+### GET /infra/workflows/executions/{execution_id} - Get workflow execution status | KEY
+Path: :execution_id
+200: `{id*, blueprint_id*, status*, input_data*:{}, result*, started_at*, completed_at*, steps*:[{step_id*, job_id*, status*, started_at*, completed_at*, error*}]}`
+
+### POST /infra/workflows/executions/{execution_id}/cancel - Cancel a workflow execution | KEY
+Path: :execution_id
+200: `{id*, status*, cancelled_at*}`
+
+### POST /infra/workflows/executions/{execution_id}/resume - Resume a workflow execution | KEY
+Path: :execution_id
+Body: `{step_id, override_output:{}}`
+200: `{id*, status*, resumed_at*}`
+
+## Infra > Webhooks
+Webhook subscription management and event fan-out. Subscribe to topics like `kv.*`, `channels.*`, `jobs.*`, `logistics.*`, or `*` for all events. See the Webhook Topics section for the full topic reference.
+
+### POST /infra/webhooks - Create a webhook | KEY
+Body: `{name*, url*, topics*:string[], secret, enabled:boolean}`
+
+### GET /infra/webhooks - List webhooks | KEY
+Query: ?limit:integer ?cursor ?enabled
+200: `{webhooks*:[{id*, name*, url*, topics*:string[], enabled*:boolean, success_count*:number, failure_count*:number, last_attempted_at*, last_status*, created_at*}], next_cursor*}`
+
+### POST /infra/webhooks/publish - Publish a custom event | KEY
+Body: `{topic*, data*}`
+
+### GET /infra/webhooks/{webhook_id} - Get a webhook | KEY
+Path: :webhook_id
+200: `{id*, name*, url*, topics*:string[], enabled*:boolean, success_count*:number, failure_count*:number, last_attempted_at*, last_status*, created_at*}`
+
+### PATCH /infra/webhooks/{webhook_id} - Update a webhook | KEY
+Path: :webhook_id
+Body: `{name, url, topics:string[], secret, enabled:boolean}`
+200: `{id*, name*, url*, topics*:string[], enabled*:boolean, success_count*:number, failure_count*:number, last_attempted_at*, last_status*, created_at*}`
+
+### DELETE /infra/webhooks/{webhook_id} - Delete a webhook | KEY
+Path: :webhook_id
+
+### POST /infra/webhooks/{webhook_id}/test - Test a webhook | KEY
+Path: :webhook_id
+200: `{status*:number, duration_ms*:number, response_snippet*}`
+
+### GET /infra/webhooks/{webhook_id}/deliveries - List webhook deliveries | KEY
+Path: :webhook_id
+Query: ?limit:integer ?cursor
+200: `{deliveries*:[{id*, callbackId*, projectId*, eventId*, topic*, payload*, status*, httpStatus*, responseSnippet*, durationMs*, retryCount*, createdAt*}], next_cursor*}`
+
+### POST /infra/webhooks/{webhook_id}/deliveries/{delivery_id}/retry - Retry a webhook delivery | KEY
+Path: :webhook_id :delivery_id
+200: `{id*, status*, http_status*:number, retry_count*:number}`
+
+## Infra > Storage
+File storage backed by Cloudflare R2. Upload, download, list, and delete objects with optional metadata.
+
+### POST /infra/storage/buckets - Create a bucket | KEY
+Body: `{name*, visibility, description}`
+200: `{id*, project_id*, name*, visibility*, description*, created_at*}`
+
+### GET /infra/storage/buckets - List buckets | KEY
+Query: ?limit:integer ?cursor
+200: `{buckets*:[{id*, project_id*, name*, visibility*, description*, created_at*}], next_cursor*}`
+
+### GET /infra/storage/buckets/{bucketId} - Get a bucket | KEY
+Path: :bucketId
+200: `{id*, project_id*, name*, visibility*, description*, created_at*}`
+
+### DELETE /infra/storage/buckets/{bucketId} - Delete a bucket | KEY
+Path: :bucketId
+
+### PUT /infra/storage/buckets/{bucketId}/objects/* - Upload an object | KEY
+Path: :bucketId
+200: `{key*, bucket_id*, size*:number, etag*, content_type*, created_at*}`
+
+### GET /infra/storage/buckets/{bucketId}/objects/* - Download an object | KEY
+Path: :bucketId
+
+### DELETE /infra/storage/buckets/{bucketId}/objects/* - Delete an object | KEY
+Path: :bucketId
+
+### GET /infra/storage/buckets/{bucketId}/objects - List objects | KEY
+Path: :bucketId
+Query: ?prefix ?delimiter ?limit:integer ?cursor
+
+### POST /infra/storage/buckets/{bucketId}/signed-url - Generate a signed URL | KEY
+Path: :bucketId
+Body: `{key*, method*, expires_in:integer, content_type}`
+
+### GET /infra/storage/signed/{token} - Consume a signed download URL | NONE
+Path: :token (Signed URL token)
+Query: ?expires* ?p* ?b* ?k* ?m*
+
+### PUT /infra/storage/signed/{token} - Consume a signed upload URL | NONE
+Path: :token (Signed URL token)
+Query: ?expires* ?p* ?b* ?k* ?m* ?ct
+200: `{key*, bucket_id*, size*:number, etag*, content_type*, created_at*}`
+
+## Infra > Media
+Image transformations and video encoding backed by Cloudflare Images and Cloudflare Stream.
+
+### POST /infra/media/assets - Upload a media asset | KEY
+
+### GET /infra/media/assets - List media assets | KEY
+Query: ?media_type ?limit:integer ?cursor
+200: `{assets*:[{id*, project_id*, filename*, content_type*, size*:number, media_type*, width*, height*, duration_sec*, status*, error*, visibility*, metadata*, created_at*}], next_cursor*}`
+
+### GET /infra/media/assets/{assetId} - Get a media asset | KEY
+Path: :assetId
+200: `{id*, project_id*, filename*, content_type*, size*:number, media_type*, width*, height*, duration_sec*, status*, error*, visibility*, metadata*, created_at*}`
+
+### DELETE /infra/media/assets/{assetId} - Delete a media asset | KEY
+Path: :assetId
+
+### POST /infra/media/assets/{assetId}/transform/image - Generate a transformed image URL | KEY
+Path: :assetId
+Body: `{width:integer, height:integer, fit, format, quality:integer, blur:integer, background}`
+200: `{id*, asset_id*, type*, params*, status*, url*, content_type*, size*, width*, height*, error*, job_id*, created_at*}`
+
+### POST /infra/media/assets/{assetId}/transform/video - Start a video encoding job | KEY
+Path: :assetId
+Body: `{resolutions:string[], format, framerate:integer, generate_thumbnails:boolean, webhook_topic}`
+
+### GET /infra/media/assets/{assetId}/variants - List asset variants | KEY
+Path: :assetId
+200: `{variants*:[{id*, asset_id*, type*, params*, status*, url*, content_type*, size*, width*, height*, error*, job_id*, created_at*}]}`
+
+## Infra > AI
+Atomic AI primitives: model catalog, responses, embeddings, rerank, moderation, audio, images, documents, and async operation tracking.
+
+### GET /infra/ai/models - List AI models | KEY
+200: `{data*:[{id*, name*, provider*, capabilities*:string[], input_modalities*:string[], output_modalities*:string[], context_window*, max_output_tokens*, supports_tools*:boolean, supports_json_schema*:boolean, supports_streaming*:boolean, status*, deprecated_at*, pricing*:{input_per_million_tokens*, output_per_million_tokens*, audio_minute*, image_step*, image_tile*, per_request*}, description*}]}`
+
+### GET /v1/models - List AI models | KEY
+200: `{data*:[{id*, name*, provider*, capabilities*:string[], input_modalities*:string[], output_modalities*:string[], context_window*, max_output_tokens*, supports_tools*:boolean, supports_json_schema*:boolean, supports_streaming*:boolean, status*, deprecated_at*, pricing*:{input_per_million_tokens*, output_per_million_tokens*, audio_minute*, image_step*, image_tile*, per_request*}, description*}]}`
+
+### GET /infra/ai/models/{model_id} - Get AI model | KEY
+Path: :model_id
+200: `{id*, name*, provider*, capabilities*:string[], input_modalities*:string[], output_modalities*:string[], context_window*, max_output_tokens*, supports_tools*:boolean, supports_json_schema*:boolean, supports_streaming*:boolean, status*, deprecated_at*, pricing*:{input_per_million_tokens*, output_per_million_tokens*, audio_minute*, image_step*, image_tile*, per_request*}, description*}`
+
+### GET /v1/models/{model_id} - Get AI model | KEY
+Path: :model_id
+200: `{id*, name*, provider*, capabilities*:string[], input_modalities*:string[], output_modalities*:string[], context_window*, max_output_tokens*, supports_tools*:boolean, supports_json_schema*:boolean, supports_streaming*:boolean, status*, deprecated_at*, pricing*:{input_per_million_tokens*, output_per_million_tokens*, audio_minute*, image_step*, image_tile*, per_request*}, description*}`
+
+### POST /infra/ai/responses - Create an AI response | KEY
+Body: `{model, instructions, input, messages:[{role*, content*}], stream:boolean, async:boolean, temperature:number, max_output_tokens:integer, response_format:{}, result_destination:{bucket_id*, key*}, webhook_topic}`
+200: `{id*, object*, created*:number, model*, output_text*, usage*}`
+
+### POST /v1/responses - Create an AI response | KEY
+Body: `{model, instructions, input, messages:[{role*, content*}], stream:boolean, async:boolean, temperature:number, max_output_tokens:integer, response_format:{}, result_destination:{bucket_id*, key*}, webhook_topic}`
+200: `{id*, object*, created*:number, model*, output_text*, usage*}`
+
+### POST /v1/chat/completions - Create a chat completion | KEY
+Body: `{model, messages*:[{role*, content*}], stream:boolean, async:boolean, temperature:number, max_tokens:integer, response_format:{}, result_destination:{bucket_id*, key*}, webhook_topic}`
+200: `{id*, object*, created*:number, model*, choices*:[{index*:number, message*:{role*, content*}, finish_reason*}], usage*}`
+
+### POST /infra/ai/realtime/sessions - Create a realtime session bootstrap | KEY
+Body: `{model, ttl_seconds:integer, voice}`
+200: `{id*, model*, websocket_url*, client_secret*, expires_at*, cost*:number}`
+
+### POST /v1/realtime/sessions - Create a realtime session bootstrap | KEY
+Body: `{model, ttl_seconds:integer, voice}`
+200: `{id*, model*, websocket_url*, client_secret*, expires_at*, cost*:number}`
+
+### POST /infra/ai/embeddings - Create embeddings | KEY
+Body: `{model, input*}`
+200: `{object*, model*, data*:[{object*, index*:number, embedding*:number[]}], usage*}`
+
+### POST /v1/embeddings - Create embeddings | KEY
+Body: `{model, input*}`
+200: `{object*, model*, data*:[{object*, index*:number, embedding*:number[]}], usage*}`
+
+### POST /infra/ai/rerank - Rerank candidate documents | KEY
+Body: `{model, query*, documents*:string[], top_n:integer}`
+200: `{model*, results*:[{index*:number, score*:number, document*}]}`
+
+### POST /infra/ai/moderations - Create moderation classifications | KEY
+Body: `{model, input*}`
+200: `{model*, results*:[{flagged*:boolean, categories*:string[], summary*}]}`
+
+### POST /v1/moderations - Create moderation classifications | KEY
+Body: `{model, input*}`
+200: `{model*, results*:[{flagged*:boolean, categories*:string[], summary*}]}`
+
+### POST /infra/ai/audio/transcriptions - Transcribe audio | KEY
+Body: `{model, prompt, language, storage_ref:{bucket_id, key}, base64, content_type, name, async:boolean, webhook_topic}`
+200: `{text*, language*, duration_seconds*, segments*:any[]}`
+
+### POST /v1/audio/transcriptions - Transcribe audio | KEY
+Body: `{model, prompt, language, storage_ref:{bucket_id, key}, base64, content_type, name, async:boolean, webhook_topic}`
+200: `{text*, language*, duration_seconds*, segments*:any[]}`
+
+### POST /infra/ai/audio/translations - Translate audio | KEY
+Body: `{model, prompt, language, storage_ref:{bucket_id, key}, base64, content_type, name, async:boolean, webhook_topic}`
+200: `{text*, language*, duration_seconds*, segments*:any[]}`
+
+### POST /v1/audio/translations - Translate audio | KEY
+Body: `{model, prompt, language, storage_ref:{bucket_id, key}, base64, content_type, name, async:boolean, webhook_topic}`
+200: `{text*, language*, duration_seconds*, segments*:any[]}`
+
+### POST /infra/ai/audio/speech - Synthesize speech | KEY
+Body: `{model, input*, voice, response_format, async:boolean, result_destination:{bucket_id*, key*}, webhook_topic}`
+200: `{audio_base64*, content_type*, result_destination*}`
+
+### POST /v1/audio/speech - Synthesize speech | KEY
+Body: `{model, input*, voice, response_format, async:boolean, result_destination:{bucket_id*, key*}, webhook_topic}`
+200: `{audio_base64*, content_type*, result_destination*}`
+
+### POST /infra/ai/images/generations - Generate images | KEY
+Body: `{model, prompt*, n:integer, size, steps:integer, async:boolean, result_destination:{bucket_id*, key*}, webhook_topic}`
+200: `{created*:number, data*:[{b64_json*, result_destination*}]}`
+
+### POST /v1/images/generations - Generate images | KEY
+Body: `{model, prompt*, n:integer, size, steps:integer, async:boolean, result_destination:{bucket_id*, key*}, webhook_topic}`
+200: `{created*:number, data*:[{b64_json*, result_destination*}]}`
+
+### POST /infra/ai/images/edits - Edit an image | KEY
+Body: `{model, prompt*, n:integer, size, steps:integer, async:boolean, result_destination:{bucket_id*, key*}, webhook_topic, image*:{base64, storage_ref:{bucket_id*, key*}, content_type, name}}`
+200: `{created*:number, data*:[{b64_json*, result_destination*}]}`
+
+### POST /v1/images/edits - Edit an image | KEY
+Body: `{model, prompt*, n:integer, size, steps:integer, async:boolean, result_destination:{bucket_id*, key*}, webhook_topic, image*:{base64, storage_ref:{bucket_id*, key*}, content_type, name}}`
+200: `{created*:number, data*:[{b64_json*, result_destination*}]}`
+
+### POST /infra/ai/images/variations - Generate image variations | KEY
+Body: `{model, prompt*, n:integer, size, steps:integer, async:boolean, result_destination:{bucket_id*, key*}, webhook_topic, image*:{base64, storage_ref:{bucket_id*, key*}, content_type, name}}`
+200: `{created*:number, data*:[{b64_json*, result_destination*}]}`
+
+### POST /v1/images/variations - Generate image variations | KEY
+Body: `{model, prompt*, n:integer, size, steps:integer, async:boolean, result_destination:{bucket_id*, key*}, webhook_topic, image*:{base64, storage_ref:{bucket_id*, key*}, content_type, name}}`
+200: `{created*:number, data*:[{b64_json*, result_destination*}]}`
+
+### POST /infra/ai/documents/parse - Parse a document into normalized blocks | KEY
+200: `{blocks*:[{id*, type*, text*, metadata*:{}}]}`
+
+### POST /infra/ai/documents/chunk - Chunk text or parsed blocks | KEY
+Body: `{text, blocks:[{id, text*, metadata:{}}], max_chars:integer, overlap_chars:integer}`
+200: `{chunks*:[{id*, text*, start_char*:number, end_char*:number, token_estimate*:number, metadata*:{}}]}`
+
+### GET /infra/ai/operations/{operation_id} - Get async AI operation | KEY
+Path: :operation_id
+200: `{id*, project_id*, kind*, provider*, model*, status*, input*, result*, usage*, error*, result_destination*, created_at*, updated_at*, completed_at*, cancelled_at*}`
+
+### POST /infra/ai/operations/{operation_id}/cancel - Cancel async AI operation | KEY
+Path: :operation_id
+200: `{id*, project_id*, kind*, provider*, model*, status*, input*, result*, usage*, error*, result_destination*, created_at*, updated_at*, completed_at*, cancelled_at*}`
+
+## Infra > Decisioning > Search
+Managed hybrid retrieval primitives backed by D1 metadata, FTS recall, optional Vectorize namespaces, and Workers AI embeddings or rerank.
+
+### POST /infra/decisioning/search/indexes - Create a search index | KEY
+Body: `{name*, description, metric, dimensions*:integer, mode, embedding_model, rerank_model, vector_namespace, metadata_schema}`
+200: `{id*, project_id*, name*, description*, metric*, dimensions*:number, mode*, embedding_model*, rerank_model*, vector_namespace*, rebuild_status*, last_rebuilt_at*, metadata_schema*, created_at*, updated_at*}`
+
+### GET /infra/decisioning/search/indexes - List search indexes | KEY
+200: `{indexes*:[{id*, project_id*, name*, description*, metric*, dimensions*:number, mode*, embedding_model*, rerank_model*, vector_namespace*, rebuild_status*, last_rebuilt_at*, metadata_schema*, created_at*, updated_at*}]}`
+
+### GET /infra/decisioning/search/indexes/{index_id} - Get search index | KEY
+Path: :index_id
+200: `{id*, project_id*, name*, description*, metric*, dimensions*:number, mode*, embedding_model*, rerank_model*, vector_namespace*, rebuild_status*, last_rebuilt_at*, metadata_schema*, created_at*, updated_at*}`
+
+### PATCH /infra/decisioning/search/indexes/{index_id} - Update search index | KEY
+Path: :index_id
+Body: `{name, description, mode, embedding_model, rerank_model, vector_namespace, metadata_schema}`
+200: `{id*, project_id*, name*, description*, metric*, dimensions*:number, mode*, embedding_model*, rerank_model*, vector_namespace*, rebuild_status*, last_rebuilt_at*, metadata_schema*, created_at*, updated_at*}`
+
+### DELETE /infra/decisioning/search/indexes/{index_id} - Delete search index | KEY
+Path: :index_id
+
+### POST /infra/decisioning/search/indexes/{index_id}/documents/upsert - Upsert search documents | KEY
+Path: :index_id
+Body: `{auto_embed:boolean, documents*:[{id*, text, vector, metadata}]}`
+200: `{upserted*:number}`
+
+### GET /infra/decisioning/search/indexes/{index_id}/documents - List search documents | KEY
+Path: :index_id
+200: `{documents*:[{id*, text*, vector*, metadata*, created_at*, updated_at*}]}`
+
+### GET /infra/decisioning/search/indexes/{index_id}/documents/{document_id} - Get search document | KEY
+Path: :index_id :document_id
+200: `{id*, text*, vector*, metadata*, created_at*, updated_at*}`
+
+### DELETE /infra/decisioning/search/indexes/{index_id}/documents/{document_id} - Delete search document | KEY
+Path: :index_id :document_id
+
+### POST /infra/decisioning/search/indexes/{index_id}/query - Query a search index | KEY
+Path: :index_id
+Body: `{query_text, query_vector:number[], limit:integer, filter:{}, mode, alpha:number, rerank:boolean}`
+200: `{mode*, results*:[{id*, text*, metadata*, score*:number, lexical_score*:number, semantic_score*:number, rerank_score:number}]}`
+
+### POST /infra/decisioning/search/indexes/{index_id}/suggest - Suggest search terms | KEY
+Path: :index_id
+Body: `{prefix*, limit:integer}`
+200: `{suggestions*:string[]}`
+
+### GET /infra/decisioning/search/indexes/{index_id}/stats - Get search index stats | KEY
+Path: :index_id
+200: `{index_id*, project_id*, dimensions*:number, metric*, mode*, vector_namespace*, rebuild_status*, last_rebuilt_at*, item_count*:number}`
+
+### POST /infra/decisioning/search/indexes/{index_id}/rebuild - Rebuild search index state | KEY
+Path: :index_id
+Body: `{async:boolean}`
+200: `{rebuilt*:number, status*}`
+
+## Infra > Decisioning > Matching
+Domain-agnostic constrained assignment and optimal matching primitives over caller-supplied nodes, capacities, and weighted edges.
+
+### POST /infra/decisioning/matching/operations - Create a matching operation | KEY
+Body: `{problem*:{left_nodes*:[{id*, capacity:integer, metadata:{}}], right_nodes*:[{id*, capacity:integer, metadata:{}}], edges*:[{left_id*, right_id*, cost:number, score:number, allowed:boolean, metadata:{}}], objective, allow_unassigned_left:boolean, unassigned_penalty:number, explain:boolean}, async:boolean, idempotency_key}`
+200: `{objective*, exact*:boolean, assignments*:[{left_id*, right_id*, cost*, score*, rank*:number}], unassigned_left*:string[], unassigned_right*:string[], summary*:{assigned_count*:number, total_cost*:number, total_score*:number}, explain:{algorithm*, objective*, candidate_edges*:number, left_slots*:number, right_slots*:number}}`
+
+### POST /infra/decisioning/matching/operations/batch - Create a batch matching operation | KEY
+Body: `{problems*:[{left_nodes*:[{id*, capacity:integer, metadata:{}}], right_nodes*:[{id*, capacity:integer, metadata:{}}], edges*:[{left_id*, right_id*, cost:number, score:number, allowed:boolean, metadata:{}}], objective, allow_unassigned_left:boolean, unassigned_penalty:number, explain:boolean}], async:boolean, idempotency_key}`
+200: `{results*:[{objective*, exact*:boolean, assignments*:[{left_id*, right_id*, cost*, score*, rank*:number}], unassigned_left*:string[], unassigned_right*:string[], summary*:{assigned_count*:number, total_cost*:number, total_score*:number}, explain:{algorithm*, objective*, candidate_edges*:number, left_slots*:number, right_slots*:number}}]}`
+
+### GET /infra/decisioning/matching/operations/{operation_id} - Get a matching operation | KEY
+Path: :operation_id
+200: `{id*, project_id*, template_id*, status*, request*, result*, error*, created_at*, updated_at*, completed_at*, cancelled_at*}`
+
+### POST /infra/decisioning/matching/operations/{operation_id}/cancel - Cancel a matching operation | KEY
+Path: :operation_id
+200: `{id*, project_id*, template_id*, status*, request*, result*, error*, created_at*, updated_at*, completed_at*, cancelled_at*}`
+
+### POST /infra/decisioning/matching/templates - Create a matching template | KEY
+Body: `{name*, description, problem*:{left_nodes*:[{id*, capacity:integer, metadata:{}}], right_nodes*:[{id*, capacity:integer, metadata:{}}], edges*:[{left_id*, right_id*, cost:number, score:number, allowed:boolean, metadata:{}}], objective, allow_unassigned_left:boolean, unassigned_penalty:number, explain:boolean}, default_options}`
+200: `{id*, project_id*, name*, description*, problem*:{left_nodes*:[{id*, capacity:integer, metadata:{}}], right_nodes*:[{id*, capacity:integer, metadata:{}}], edges*:[{left_id*, right_id*, cost:number, score:number, allowed:boolean, metadata:{}}], objective, allow_unassigned_left:boolean, unassigned_penalty:number, explain:boolean}, default_options*, created_at*, updated_at*}`
+
+### GET /infra/decisioning/matching/templates - List matching templates | KEY
+200: `{templates*:[{id*, project_id*, name*, description*, problem*:{left_nodes*:[{id*, capacity:integer, metadata:...}], right_nodes*:[{id*, capacity:integer, metadata:...}], edges*:[{left_id*, right_id*, cost:number, score:number, allowed:boolean, metadata:...}], objective, allow_unassigned_left:boolean, unassigned_penalty:number, explain:boolean}, default_options*, created_at*, updated_at*}]}`
+
+### GET /infra/decisioning/matching/templates/{template_id} - Get a matching template | KEY
+Path: :template_id
+200: `{id*, project_id*, name*, description*, problem*:{left_nodes*:[{id*, capacity:integer, metadata:{}}], right_nodes*:[{id*, capacity:integer, metadata:{}}], edges*:[{left_id*, right_id*, cost:number, score:number, allowed:boolean, metadata:{}}], objective, allow_unassigned_left:boolean, unassigned_penalty:number, explain:boolean}, default_options*, created_at*, updated_at*}`
+
+### PATCH /infra/decisioning/matching/templates/{template_id} - Update a matching template | KEY
+Path: :template_id
+Body: `{name, description, problem:{left_nodes*:[{id*, capacity:integer, metadata:{}}], right_nodes*:[{id*, capacity:integer, metadata:{}}], edges*:[{left_id*, right_id*, cost:number, score:number, allowed:boolean, metadata:{}}], objective, allow_unassigned_left:boolean, unassigned_penalty:number, explain:boolean}, default_options}`
+200: `{id*, project_id*, name*, description*, problem*:{left_nodes*:[{id*, capacity:integer, metadata:{}}], right_nodes*:[{id*, capacity:integer, metadata:{}}], edges*:[{left_id*, right_id*, cost:number, score:number, allowed:boolean, metadata:{}}], objective, allow_unassigned_left:boolean, unassigned_penalty:number, explain:boolean}, default_options*, created_at*, updated_at*}`
+
+### DELETE /infra/decisioning/matching/templates/{template_id} - Delete a matching template | KEY
+Path: :template_id
+
+### POST /infra/decisioning/matching/templates/{template_id}/operations - Create a template-backed matching operation | KEY
+Path: :template_id
+Body: `{override:{left_nodes:[{id*, capacity:integer, metadata:{}}], right_nodes:[{id*, capacity:integer, metadata:{}}], edges:[{left_id*, right_id*, cost:number, score:number, allowed:boolean, metadata:{}}], objective, allow_unassigned_left:boolean, unassigned_penalty:number, explain:boolean}, async:boolean, idempotency_key}`
+200: `{objective*, exact*:boolean, assignments*:[{left_id*, right_id*, cost*, score*, rank*:number}], unassigned_left*:string[], unassigned_right*:string[], summary*:{assigned_count*:number, total_cost*:number, total_score*:number}, explain:{algorithm*, objective*, candidate_edges*:number, left_slots*:number, right_slots*:number}}`
+
+## Infra > Decisioning > Ranking
+Ranking primitives for caller-owned collections, signals, recommendation queries, and related-item lookups.
+
+### POST /infra/decisioning/ranking/collections - Create a ranking collection | KEY
+Body: `{name*, description, strategy_default, embedding_model, metadata_schema}`
+200: `{id*, project_id*, name*, description*, strategy_default*, embedding_model*, metadata_schema*, created_at*, updated_at*}`
+
+### GET /infra/decisioning/ranking/collections - List ranking collections | KEY
+200: `{collections*:[{id*, project_id*, name*, description*, strategy_default*, embedding_model*, metadata_schema*, created_at*, updated_at*}]}`
+
+### GET /infra/decisioning/ranking/collections/{collection_id} - Get a ranking collection | KEY
+Path: :collection_id
+200: `{id*, project_id*, name*, description*, strategy_default*, embedding_model*, metadata_schema*, created_at*, updated_at*}`
+
+### PATCH /infra/decisioning/ranking/collections/{collection_id} - Update a ranking collection | KEY
+Path: :collection_id
+Body: `{name, description, strategy_default, embedding_model, metadata_schema}`
+200: `{id*, project_id*, name*, description*, strategy_default*, embedding_model*, metadata_schema*, created_at*, updated_at*}`
+
+### DELETE /infra/decisioning/ranking/collections/{collection_id} - Delete a ranking collection | KEY
+Path: :collection_id
+
+### POST /infra/decisioning/ranking/collections/{collection_id}/items/upsert - Upsert ranking items | KEY
+Path: :collection_id
+Body: `{auto_embed:boolean, items*:[{id*, title, text, embedding, metadata}]}`
+200: `{upserted*:number}`
+
+### GET /infra/decisioning/ranking/collections/{collection_id}/items - List ranking items | KEY
+Path: :collection_id
+200: `{items*:[{id*, title*, text*, embedding*, metadata*, created_at*, updated_at*}]}`
+
+### GET /infra/decisioning/ranking/collections/{collection_id}/items/{item_id} - Get a ranking item | KEY
+Path: :collection_id :item_id
+200: `{id*, title*, text*, embedding*, metadata*, created_at*, updated_at*}`
+
+### DELETE /infra/decisioning/ranking/collections/{collection_id}/items/{item_id} - Delete a ranking item | KEY
+Path: :collection_id :item_id
+
+### POST /infra/decisioning/ranking/collections/{collection_id}/signals/batch - Ingest ranking signals | KEY
+Path: :collection_id
+Body: `{signals*:[{subject_id*, item_id*, event*, weight:number, metadata, created_at}]}`
+200: `{ingested*:number}`
+
+### POST /infra/decisioning/ranking/collections/{collection_id}/rank - Rank collection items | KEY
+Path: :collection_id
+Body: `{subject_id*, strategy, limit:integer, candidate_ids:string[], exclude_item_ids:string[]}`
+200: `{strategy*, results*:[{item_id*, title*, text*, metadata*, score*:number, behavioral_score*:number, semantic_score*:number}]}`
+
+### POST /infra/decisioning/ranking/collections/{collection_id}/related - Find related collection items | KEY
+Path: :collection_id
+Body: `{item_id*, strategy, limit:integer, candidate_ids:string[], exclude_item_ids:string[]}`
+200: `{strategy*, source_item_id*, results*:[{item_id*, title*, text*, metadata*, score*:number, behavioral_score*:number, semantic_score*:number}]}`
+
+### GET /infra/decisioning/ranking/collections/{collection_id}/stats - Get ranking collection stats | KEY
+Path: :collection_id
+200: `{collection_id*, project_id*, strategy_default*, item_count*:number, signal_count*:number, subject_count*:number}`
+
+## Compat > OpenAI
+OpenAI-compatible aliases for selected AI primitives exposed under `/v1/*`.
+
+### GET /v1/models - List AI models | KEY
+200: `{data*:[{id*, name*, provider*, capabilities*:string[], input_modalities*:string[], output_modalities*:string[], context_window*, max_output_tokens*, supports_tools*:boolean, supports_json_schema*:boolean, supports_streaming*:boolean, status*, deprecated_at*, pricing*:{input_per_million_tokens*, output_per_million_tokens*, audio_minute*, image_step*, image_tile*, per_request*}, description*}]}`
+
+### GET /v1/models/{model_id} - Get AI model | KEY
+Path: :model_id
+200: `{id*, name*, provider*, capabilities*:string[], input_modalities*:string[], output_modalities*:string[], context_window*, max_output_tokens*, supports_tools*:boolean, supports_json_schema*:boolean, supports_streaming*:boolean, status*, deprecated_at*, pricing*:{input_per_million_tokens*, output_per_million_tokens*, audio_minute*, image_step*, image_tile*, per_request*}, description*}`
+
+### POST /v1/responses - Create an AI response | KEY
+Body: `{model, instructions, input, messages:[{role*, content*}], stream:boolean, async:boolean, temperature:number, max_output_tokens:integer, response_format:{}, result_destination:{bucket_id*, key*}, webhook_topic}`
+200: `{id*, object*, created*:number, model*, output_text*, usage*}`
+
+### POST /v1/chat/completions - Create a chat completion | KEY
+Body: `{model, messages*:[{role*, content*}], stream:boolean, async:boolean, temperature:number, max_tokens:integer, response_format:{}, result_destination:{bucket_id*, key*}, webhook_topic}`
+200: `{id*, object*, created*:number, model*, choices*:[{index*:number, message*:{role*, content*}, finish_reason*}], usage*}`
+
+### POST /v1/realtime/sessions - Create a realtime session bootstrap | KEY
+Body: `{model, ttl_seconds:integer, voice}`
+200: `{id*, model*, websocket_url*, client_secret*, expires_at*, cost*:number}`
+
+### POST /v1/embeddings - Create embeddings | KEY
+Body: `{model, input*}`
+200: `{object*, model*, data*:[{object*, index*:number, embedding*:number[]}], usage*}`
+
+### POST /v1/moderations - Create moderation classifications | KEY
+Body: `{model, input*}`
+200: `{model*, results*:[{flagged*:boolean, categories*:string[], summary*}]}`
+
+### POST /v1/audio/transcriptions - Transcribe audio | KEY
+Body: `{model, prompt, language, storage_ref:{bucket_id, key}, base64, content_type, name, async:boolean, webhook_topic}`
+200: `{text*, language*, duration_seconds*, segments*:any[]}`
+
+### POST /v1/audio/translations - Translate audio | KEY
+Body: `{model, prompt, language, storage_ref:{bucket_id, key}, base64, content_type, name, async:boolean, webhook_topic}`
+200: `{text*, language*, duration_seconds*, segments*:any[]}`
+
+### POST /v1/audio/speech - Synthesize speech | KEY
+Body: `{model, input*, voice, response_format, async:boolean, result_destination:{bucket_id*, key*}, webhook_topic}`
+200: `{audio_base64*, content_type*, result_destination*}`
+
+### POST /v1/images/generations - Generate images | KEY
+Body: `{model, prompt*, n:integer, size, steps:integer, async:boolean, result_destination:{bucket_id*, key*}, webhook_topic}`
+200: `{created*:number, data*:[{b64_json*, result_destination*}]}`
+
+### POST /v1/images/edits - Edit an image | KEY
+Body: `{model, prompt*, n:integer, size, steps:integer, async:boolean, result_destination:{bucket_id*, key*}, webhook_topic, image*:{base64, storage_ref:{bucket_id*, key*}, content_type, name}}`
+200: `{created*:number, data*:[{b64_json*, result_destination*}]}`
+
+### POST /v1/images/variations - Generate image variations | KEY
+Body: `{model, prompt*, n:integer, size, steps:integer, async:boolean, result_destination:{bucket_id*, key*}, webhook_topic, image*:{base64, storage_ref:{bucket_id*, key*}, content_type, name}}`
+200: `{created*:number, data*:[{b64_json*, result_destination*}]}`
+
+## Logistics > Geo
+Generic geospatial entity registration, status management, and proximity search.
+
+### POST /logistics/geo/entities - Create a geo entity | KEY
+Body: `{type*, name*, external_id, status, lat:number, lng:number, callback_url, metadata:{}}`
+
+### GET /logistics/geo/entities - List geo entities | KEY
+Query: ?type ?status ?limit:integer ?cursor
+200: `{entities*:[{id*, project_id*, external_id*, type*, name*, status*, lat*, lng*, google_maps_url*, heading:number, speed:number, last_seen_at*, callback_url*, metadata*, created_at*}], next_cursor*}`
+
+### GET /logistics/geo/entities/nearby - Find nearby entities | KEY
+Query: ?lat*:number ?lng*:number ?radius_km:number ?type ?status ?limit:integer
+200: `{entities*:[{id*, project_id*, external_id*, type*, name*, status*, lat*, lng*, google_maps_url*, heading:number, speed:number, last_seen_at*, callback_url*, metadata*, created_at*}]}`
+
+### GET /logistics/geo/entities/{entity_id} - Get a geo entity | KEY
+Path: :entity_id
+200: `{id*, project_id*, external_id*, type*, name*, status*, lat*, lng*, google_maps_url*, heading:number, speed:number, last_seen_at*, callback_url*, metadata*, created_at*}`
+
+### PATCH /logistics/geo/entities/{entity_id} - Update a geo entity | KEY
+Path: :entity_id
+Body: `{name, external_id, type, status, lat:number, lng:number, callback_url, metadata:{}}`
+200: `{id*, project_id*, external_id*, type*, name*, status*, lat*, lng*, google_maps_url*, heading:number, speed:number, last_seen_at*, callback_url*, metadata*, created_at*}`
+
+### DELETE /logistics/geo/entities/{entity_id} - Deactivate a geo entity | KEY
+Path: :entity_id
+200: `{id*, project_id*, external_id*, type*, name*, status*, lat*, lng*, google_maps_url*, heading:number, speed:number, last_seen_at*, callback_url*, metadata*, created_at*}`
+
+## Logistics > Tracking
+Real-time GPS tracking with live WebSocket streaming.
+
+### POST /logistics/tracking/{entity_id}/ping - Submit a location ping | KEY
+Path: :entity_id
+Body: `{lat*:number, lng*:number, heading:number, speed:number, accuracy:number, recorded_at}`
+200: `{ping_id*, entity_id*, lat*:number, lng*:number, google_maps_url*, geofence_events:[{fence_id*, fence_name*, event*}], eta_fence_events:[{fence_id*, fence_name*, event*, eta_min*:number}]}`
+
+### POST /logistics/tracking/{entity_id}/ping/batch - Submit batch location pings | KEY
+Path: :entity_id
+Body: `{pings*:[{lat*:number, lng*:number, heading:number, speed:number, accuracy:number, recorded_at}]}`
+200: `{count*:number, entity_id*, geofence_events:[{fence_id*, fence_name*, event*}], eta_fence_events:[{fence_id*, fence_name*, event*, eta_min*:number}]}`
+
+### GET /logistics/tracking/{entity_id}/track - Subscribe to live tracking | KEY
+Path: :entity_id
+
+### GET /logistics/tracking/{entity_id}/history - Get ping history | KEY
+Path: :entity_id
+Query: ?limit:integer ?cursor
+200: `{pings*:[{id*, lat*:number, lng*:number, google_maps_url*, heading*, speed*, accuracy*, recorded_at*, created_at*}], next_cursor*}`
+
+## Logistics > Geofencing
+Define zones and receive enter/exit webhooks when tracked entities cross boundaries.
+
+### POST /logistics/geo/fences - Create a geofence | KEY
+Body: `{name*, type, lat:number, lng:number, radius_m:number, polygon:array[], entity_types:string[], metadata:{}}`
+
+### GET /logistics/geo/fences - List geofences | KEY
+Query: ?enabled ?limit:integer ?cursor
+200: `{fences*:[{id*, project_id*, name*, type*, lat*, lng*, radius_m*, polygon*, entity_types*, enabled*:boolean, google_maps_url*, metadata*, created_at*}], next_cursor*}`
+
+### GET /logistics/geo/fences/{fence_id} - Get a geofence | KEY
+Path: :fence_id
+200: `{id*, project_id*, name*, type*, lat*, lng*, radius_m*, polygon*, entity_types*, enabled*:boolean, google_maps_url*, metadata*, created_at*}`
+
+### DELETE /logistics/geo/fences/{fence_id} - Delete a geofence | KEY
+Path: :fence_id
+200: `{deleted*:boolean}`
+
+## Logistics > ETA Fencing
+Define destination points with time thresholds. Receive breach/cleared webhooks when a tracked entity's driving ETA drops below or rises above the configured threshold.
+
+### POST /logistics/geo/eta-fences - Create an ETA fence | KEY
+Body: `{name*, dest_lat*:number, dest_lng*:number, threshold_min*:number, entity_types:string[], avg_speed_kmh:number, heuristic_multiplier:number, metadata:{}}`
+
+### GET /logistics/geo/eta-fences - List ETA fences | KEY
+Query: ?enabled ?limit:integer ?cursor
+200: `{eta_fences*:[{id*, project_id*, name*, dest_lat*:number, dest_lng*:number, threshold_min*:number, entity_types*, avg_speed_kmh*:number, heuristic_multiplier*:number, enabled*:boolean, google_maps_url*, metadata*, created_at*}], next_cursor*}`
+
+### GET /logistics/geo/eta-fences/{fence_id} - Get an ETA fence | KEY
+Path: :fence_id
+200: `{id*, project_id*, name*, dest_lat*:number, dest_lng*:number, threshold_min*:number, entity_types*, avg_speed_kmh*:number, heuristic_multiplier*:number, enabled*:boolean, google_maps_url*, metadata*, created_at*}`
+
+### DELETE /logistics/geo/eta-fences/{fence_id} - Delete an ETA fence | KEY
+Path: :fence_id
+200: `{deleted*:boolean}`
+
+## Logistics > Routing
+Route calculation, stop optimization, distance matrices, dispatch, isochrone, and snap-to-road via Mapbox.
+
+### POST /logistics/routing/route - Calculate a route | KEY
+Body: `{origin*:{lat*:number, lng*:number}, destination*:{lat*:number, lng*:number}, waypoints:[{lat*:number, lng*:number}]}`
+200: `{polyline*:{type*, coordinates*:array[]}, distance_km*:number, duration_min*:number, steps:[{instruction*, distance_km*:number, duration_min*:number}], google_maps_url*}`
+
+### POST /logistics/routing/optimize - Optimize stop order | KEY
+Body: `{origin*:{lat*:number, lng*:number}, stops*:[{lat*:number, lng*:number}], destination:{lat*:number, lng*:number}}`
+200: `{ordered_stops*:[{lat*:number, lng*:number, google_maps_url*}], route*:{polyline*:{type*, coordinates*:array[]}, distance_km*:number, duration_min*:number, steps:[{instruction*, distance_km*:number, duration_min*:number}], google_maps_url*}, total_distance_km*:number, total_duration_min*:number, google_maps_url*}`
+
+### POST /logistics/routing/distance-matrix - Distance matrix | KEY
+Body: `{origins*:[{lat*:number, lng*:number}], destinations*:[{lat*:number, lng*:number}]}`
+200: `{matrix*:array[], origins*:[{lat*:number, lng*:number, google_maps_url*}], destinations*:[{lat*:number, lng*:number, google_maps_url*}]}`
+
+### POST /logistics/routing/dispatch - Smart dispatch | KEY
+Body: `{agents*:[{id*, lat*:number, lng*:number}], tasks*:[{id*, lat*:number, lng*:number}]}`
+200: `{assignments*:[{agent_id*, task_id*, distance_km*:number, duration_min*:number, google_maps_url*}], unassigned_tasks*:string[]}`
+
+### POST /logistics/routing/isochrone - Isochrone / reachability | KEY
+Body: `{origin*:{lat*:number, lng*:number}, minutes*:number[], profile}`
+200: `{type*, features*:[{type*, properties*:{contour*:number, metric*}, geometry*:{type*, coordinates*:array[]}}], origin*:{lat*:number, lng*:number, google_maps_url*}}`
+
+### POST /logistics/routing/snap - Snap to road | KEY
+Body: `{pings*:[{lat*:number, lng*:number, recorded_at}], profile}`
+200: `{snapped*:[{lat*:number, lng*:number, google_maps_url*}], geometry*:{type*, coordinates*:array[]}, distance_km*:number, duration_min*:number}`
+
+## Logistics > Geocoding
+Forward/reverse geocoding and address autocomplete via Mapbox.
+
+### GET /logistics/geocoding/forward - Forward geocode | KEY
+Query: ?q* ?limit:integer ?country ?bbox
+200: `{results*:[{lat*:number, lng*:number, address*, place_name*, google_maps_url*}]}`
+
+### GET /logistics/geocoding/reverse - Reverse geocode | KEY
+Query: ?lat*:number ?lng*:number
+200: `{results*:[{lat*:number, lng*:number, address*, place_name*, google_maps_url*}]}`
+
+### POST /logistics/geocoding/autocomplete - Address autocomplete | KEY
+Body: `{q*, limit:integer, country, proximity:{lat*:number, lng*:number}, language}`
+200: `{suggestions*:[{place_name*, address*, lat*:number, lng*:number, google_maps_url*}]}`
+
+## Modules > Delivery > Settings
+Configure delivery module behavior per project.
+
+### GET /modules/delivery/settings - Get delivery settings | KEY
+200: `{id*, project_id*, auto_assign*:boolean, auto_assign_radius_km*:number, max_concurrent_orders*:number, require_proof*:boolean, proof_types*, eta_fence_threshold_min*:number, created_at*}`
+
+### PATCH /modules/delivery/settings - Update delivery settings | KEY
+Body: `{auto_assign:boolean, auto_assign_radius_km:number, max_concurrent_orders:integer, require_proof:boolean, proof_types:string[], eta_fence_threshold_min:number}`
+200: `{id*, project_id*, auto_assign*:boolean, auto_assign_radius_km*:number, max_concurrent_orders*:number, require_proof*:boolean, proof_types*, eta_fence_threshold_min*:number, created_at*}`
+
+## Modules > Delivery > Drivers
+Manage delivery drivers, online/offline status, and location tracking.
+
+### POST /modules/delivery/drivers - Create a driver | KEY
+Body: `{name*, phone, email, status, vehicle_id, hub_id, capacity:integer, metadata:{}}`
+
+### GET /modules/delivery/drivers - List drivers | KEY
+Query: ?status ?limit:integer ?cursor
+200: `{items*:[{id*, project_id*, geo_entity_id*, name*, phone*, email*, status*, vehicle_id*, hub_id*, current_order_id*, capacity*:number, metadata*, created_at*}], next_cursor*}`
+
+### GET /modules/delivery/drivers/{driver_id} - Get a driver | KEY
+Path: :driver_id
+200: `{id*, project_id*, geo_entity_id*, name*, phone*, email*, status*, vehicle_id*, hub_id*, current_order_id*, capacity*:number, metadata*, created_at*}`
+
+### PATCH /modules/delivery/drivers/{driver_id} - Update a driver | KEY
+Path: :driver_id
+Body: `{name, phone, email, status, vehicle_id, hub_id, capacity:integer, metadata:{}}`
+200: `{id*, project_id*, geo_entity_id*, name*, phone*, email*, status*, vehicle_id*, hub_id*, current_order_id*, capacity*:number, metadata*, created_at*}`
+
+### DELETE /modules/delivery/drivers/{driver_id} - Delete a driver | KEY
+Path: :driver_id
+200: `{deleted*:boolean}`
+
+### POST /modules/delivery/drivers/{driver_id}/online - Go online | KEY
+Path: :driver_id
+200: `{id*, project_id*, geo_entity_id*, name*, phone*, email*, status*, vehicle_id*, hub_id*, current_order_id*, capacity*:number, metadata*, created_at*}`
+
+### POST /modules/delivery/drivers/{driver_id}/offline - Go offline | KEY
+Path: :driver_id
+200: `{id*, project_id*, geo_entity_id*, name*, phone*, email*, status*, vehicle_id*, hub_id*, current_order_id*, capacity*:number, metadata*, created_at*}`
+
+## Modules > Delivery > Customers
+Manage delivery customers and their saved addresses.
+
+### POST /modules/delivery/customers - Create a customer | KEY
+Body: `{name*, external_id, phone, email, metadata:{}}`
+
+### GET /modules/delivery/customers - List customers | KEY
+Query: ?limit:integer ?cursor
+200: `{items*:[{id*, project_id*, external_id*, name*, phone*, email*, metadata*, created_at*}], next_cursor*}`
+
+### GET /modules/delivery/customers/{customer_id} - Get a customer | KEY
+Path: :customer_id
+200: `{id*, project_id*, external_id*, name*, phone*, email*, metadata*, created_at*, addresses*:[{id*, project_id*, customer_id*, label*, address_line*, lat*, lng*, metadata*, created_at*}]}`
+
+### PATCH /modules/delivery/customers/{customer_id} - Update a customer | KEY
+Path: :customer_id
+Body: `{name, external_id, phone, email, metadata:{}}`
+200: `{id*, project_id*, external_id*, name*, phone*, email*, metadata*, created_at*}`
+
+### DELETE /modules/delivery/customers/{customer_id} - Delete a customer | KEY
+Path: :customer_id
+200: `{deleted*:boolean}`
+
+### POST /modules/delivery/customers/{customer_id}/addresses - Add customer address | KEY
+Path: :customer_id
+Body: `{label, address_line*, lat:number, lng:number, metadata:{}}`
+
+### GET /modules/delivery/customers/{customer_id}/addresses - List customer addresses | KEY
+Path: :customer_id
+200: `{items*:[{id*, project_id*, customer_id*, label*, address_line*, lat*, lng*, metadata*, created_at*}]}`
+
+### DELETE /modules/delivery/customers/{customer_id}/addresses/{address_id} - Delete customer address | KEY
+Path: :customer_id :address_id
+200: `{deleted*:boolean}`
+
+## Modules > Delivery > Vehicles
+Manage delivery vehicles and assign them to drivers.
+
+### POST /modules/delivery/vehicles - Create a vehicle | KEY
+Body: `{type, plate, name, capacity:integer, driver_id, metadata:{}}`
+
+### GET /modules/delivery/vehicles - List vehicles | KEY
+Query: ?type ?limit:integer ?cursor
+200: `{items*:[{id*, project_id*, type*, plate*, name*, capacity*:number, driver_id*, metadata*, created_at*}], next_cursor*}`
+
+### GET /modules/delivery/vehicles/{vehicle_id} - Get a vehicle | KEY
+Path: :vehicle_id
+200: `{id*, project_id*, type*, plate*, name*, capacity*:number, driver_id*, metadata*, created_at*}`
+
+### PATCH /modules/delivery/vehicles/{vehicle_id} - Update a vehicle | KEY
+Path: :vehicle_id
+Body: `{type, plate, name, capacity:integer, driver_id, metadata:{}}`
+200: `{id*, project_id*, type*, plate*, name*, capacity*:number, driver_id*, metadata*, created_at*}`
+
+### DELETE /modules/delivery/vehicles/{vehicle_id} - Delete a vehicle | KEY
+Path: :vehicle_id
+200: `{deleted*:boolean}`
+
+## Modules > Delivery > Orders
+Create, track, and manage delivery orders through their lifecycle.
+
+### POST /modules/delivery/orders - Create an order | KEY
+Body: `{external_id, customer_id, driver_id, zone_id, hub_id, priority:integer, pickup_address, pickup_lat:number, pickup_lng:number, dropoff_address, dropoff_lat:number, dropoff_lng:number, scheduled_at, items:any[], amount:number, currency, metadata:{}}`
+
+### GET /modules/delivery/orders - List orders | KEY
+Query: ?status ?driver_id ?customer_id ?limit:integer ?cursor
+200: `{items*:[{id*, project_id*, external_id*, customer_id*, driver_id*, zone_id*, hub_id*, status*, priority*:number, pickup_address*, pickup_lat*, pickup_lng*, dropoff_address*, dropoff_lat*, dropoff_lng*, scheduled_at*, estimated_pickup_at*, estimated_dropoff_at*, actual_pickup_at*, actual_dropoff_at*, distance_km*, duration_min*, items*, amount*, currency*, eta_fence_id*, metadata*, failed_reason*, cancelled_reason*, updated_at*, created_at*}], next_cursor*}`
+
+### GET /modules/delivery/orders/{order_id} - Get an order | KEY
+Path: :order_id
+200: `{id*, project_id*, external_id*, customer_id*, driver_id*, zone_id*, hub_id*, status*, priority*:number, pickup_address*, pickup_lat*, pickup_lng*, dropoff_address*, dropoff_lat*, dropoff_lng*, scheduled_at*, estimated_pickup_at*, estimated_dropoff_at*, actual_pickup_at*, actual_dropoff_at*, distance_km*, duration_min*, items*, amount*, currency*, eta_fence_id*, metadata*, failed_reason*, cancelled_reason*, updated_at*, created_at*, stops*:[{id*, project_id*, order_id*, sequence*:number, type*, address*, lat*, lng*, contact_name*, contact_phone*, notes*, status*, arrived_at*, completed_at*, metadata*, created_at*}], recent_events*:[{id*, project_id*, order_id*, event*, actor*, data*, created_at*}]}`
+
+### PATCH /modules/delivery/orders/{order_id} - Update an order | KEY
+Path: :order_id
+Body: `{external_id, customer_id, driver_id, zone_id, hub_id, priority:integer, pickup_address, pickup_lat:number, pickup_lng:number, dropoff_address, dropoff_lat:number, dropoff_lng:number, scheduled_at, items:any[], amount:number, currency, metadata:{}}`
+200: `{id*, project_id*, external_id*, customer_id*, driver_id*, zone_id*, hub_id*, status*, priority*:number, pickup_address*, pickup_lat*, pickup_lng*, dropoff_address*, dropoff_lat*, dropoff_lng*, scheduled_at*, estimated_pickup_at*, estimated_dropoff_at*, actual_pickup_at*, actual_dropoff_at*, distance_km*, duration_min*, items*, amount*, currency*, eta_fence_id*, metadata*, failed_reason*, cancelled_reason*, updated_at*, created_at*}`
+
+### DELETE /modules/delivery/orders/{order_id} - Delete an order | KEY
+Path: :order_id
+200: `{deleted*:boolean}`
+
+### POST /modules/delivery/orders/{order_id}/transition - Transition order status | KEY
+Path: :order_id
+Body: `{status*, driver_id, failed_reason, cancelled_reason, actor}`
+200: `{id*, project_id*, external_id*, customer_id*, driver_id*, zone_id*, hub_id*, status*, priority*:number, pickup_address*, pickup_lat*, pickup_lng*, dropoff_address*, dropoff_lat*, dropoff_lng*, scheduled_at*, estimated_pickup_at*, estimated_dropoff_at*, actual_pickup_at*, actual_dropoff_at*, distance_km*, duration_min*, items*, amount*, currency*, eta_fence_id*, metadata*, failed_reason*, cancelled_reason*, updated_at*, created_at*, stops*:[{id*, project_id*, order_id*, sequence*:number, type*, address*, lat*, lng*, contact_name*, contact_phone*, notes*, status*, arrived_at*, completed_at*, metadata*, created_at*}], recent_events*:[{id*, project_id*, order_id*, event*, actor*, data*, created_at*}]}`
+
+### GET /modules/delivery/orders/{order_id}/events - List order events | KEY
+Path: :order_id
+200: `[{id*, project_id*, order_id*, event*, actor*, data*, created_at*}]`
+
+### POST /modules/delivery/orders/{order_id}/proof - Submit delivery proof | KEY
+Path: :order_id
+Body: `{type*, value*, stop_id, lat:number, lng:number}`
+
+### GET /modules/delivery/orders/{order_id}/proof - List order proofs | KEY
+Path: :order_id
+200: `{proofs*:[{id*, order_id*, stop_id*, type*, value*, url*, lat*, lng*, collected_at*, created_at*}]}`
+
+### POST /modules/delivery/orders/{order_id}/proof/photo - Upload photo proof | KEY
+Path: :order_id
+Query: ?stop_id ?lat:number ?lng:number ?filename
+
+### GET /modules/delivery/orders/{order_id}/proof/{proof_id} - Get a proof record | KEY
+Path: :order_id :proof_id
+200: `{id*, order_id*, stop_id*, type*, value*, url*, lat*, lng*, collected_at*, created_at*}`
+
+### DELETE /modules/delivery/orders/{order_id}/proof/{proof_id} - Delete a proof record | KEY
+Path: :order_id :proof_id
+
+## Modules > Delivery > Stops
+Manage pickup, dropoff, and waypoint stops within delivery orders.
+
+### POST /modules/delivery/orders/{order_id}/stops - Create a stop | KEY
+Path: :order_id
+Body: `{sequence*:integer, type*, address, lat:number, lng:number, contact_name, contact_phone, notes, metadata:{}}`
+
+### GET /modules/delivery/orders/{order_id}/stops - List stops for an order | KEY
+Path: :order_id
+200: `{items*:[{id*, project_id*, order_id*, sequence*:number, type*, address*, lat*, lng*, contact_name*, contact_phone*, notes*, status*, arrived_at*, completed_at*, metadata*, created_at*}]}`
+
+### GET /modules/delivery/stops/{stop_id} - Get a stop | KEY
+Path: :stop_id
+200: `{id*, project_id*, order_id*, sequence*:number, type*, address*, lat*, lng*, contact_name*, contact_phone*, notes*, status*, arrived_at*, completed_at*, metadata*, created_at*}`
+
+### PATCH /modules/delivery/stops/{stop_id} - Update a stop | KEY
+Path: :stop_id
+Body: `{sequence:integer, type, address, lat:number, lng:number, contact_name, contact_phone, notes, metadata:{}}`
+200: `{id*, project_id*, order_id*, sequence*:number, type*, address*, lat*, lng*, contact_name*, contact_phone*, notes*, status*, arrived_at*, completed_at*, metadata*, created_at*}`
+
+### DELETE /modules/delivery/stops/{stop_id} - Delete a stop | KEY
+Path: :stop_id
+200: `{deleted*:boolean}`
+
+### POST /modules/delivery/stops/{stop_id}/arrive - Mark stop arrived | KEY
+Path: :stop_id
+200: `{id*, project_id*, order_id*, sequence*:number, type*, address*, lat*, lng*, contact_name*, contact_phone*, notes*, status*, arrived_at*, completed_at*, metadata*, created_at*}`
+
+### POST /modules/delivery/stops/{stop_id}/complete - Complete a stop | KEY
+Path: :stop_id
+200: `{id*, project_id*, order_id*, sequence*:number, type*, address*, lat*, lng*, contact_name*, contact_phone*, notes*, status*, arrived_at*, completed_at*, metadata*, created_at*}`
+
+### POST /modules/delivery/stops/{stop_id}/skip - Skip a stop | KEY
+Path: :stop_id
+200: `{id*, project_id*, order_id*, sequence*:number, type*, address*, lat*, lng*, contact_name*, contact_phone*, notes*, status*, arrived_at*, completed_at*, metadata*, created_at*}`
+
+## Modules > Delivery > Dispatch
+Auto-assign drivers and suggest optimal driver matches for orders.
+
+### POST /modules/delivery/dispatch/suggest - Suggest drivers for an order | KEY
+Body: `{order_id*, radius_km:number, limit:integer}`
+200: `{drivers*:[{entity_id*, name*, lat*:number, lng*:number, distance_km*:number}]}`
+
+### POST /modules/delivery/dispatch/auto-assign - Auto-assign a driver to an order | KEY
+Body: `{order_id*}`
+200: `{assigned*:boolean, driver_id, reason}`
+
+## Modules > Delivery > Tracking
+Generate public tracking links, render tracking pages, and stream live delivery updates to customers and drivers.
+
+### POST /modules/delivery/tracking-links - Create a tracking link | KEY
+Body: `{order_id*, ttl_minutes:integer}`
+
+### GET /modules/delivery/tracking-links/{token} - Resolve a tracking token | KEY
+Path: :token
+200: `{role*, channel*, expires_at*}`
+
+### DELETE /modules/delivery/tracking-links/{link_id} - Revoke a tracking link | KEY
+Path: :link_id
+
+### GET /modules/delivery/tracking-pages/customer/{token} - Render the customer tracking page | NONE
+Path: :token (Short-lived public tracking token)
+
+### GET /modules/delivery/tracking-pages/customer/{token}/feed - Load customer tracking data | NONE
+Path: :token (Short-lived public tracking token)
+200: `{order*:{id*, status*, dropoff_address*, estimated_dropoff_at*}, proofs*:[{id*, order_id*, stop_id*, type*, value*, url*, lat*, lng*, collected_at*, created_at*}], rating*}`
+
+### POST /modules/delivery/tracking-pages/customer/{token}/rating - Submit a customer delivery rating | NONE
+Path: :token (Short-lived public tracking token)
+Body: `{score*:integer, comment}`
+
+### GET /modules/delivery/tracking-pages/driver/{token} - Render the driver tracking page | NONE
+Path: :token (Short-lived public tracking token)
+
+### POST /modules/delivery/tracking-pages/driver/{token}/ping - Send a driver location ping from a tracking page | NONE
+Path: :token (Short-lived public tracking token)
+Body: `{lat*:number, lng*:number}`
+200: `{ok*:boolean}`
+
+### POST /modules/delivery/tracking-pages/driver/{token}/proof/photo - Upload driver photo proof from a tracking page | NONE
+Path: :token (Short-lived public tracking token)
+Body: `{file*, comment, lat:number, lng:number}`
+
+### POST /modules/delivery/tracking-pages/driver/{token}/proof/comment - Submit driver comment proof from a tracking page | NONE
+Path: :token (Short-lived public tracking token)
+Body: `{text*, lat:number, lng:number}`
+
+### GET /modules/delivery/tracking-pages/subscribe/{token} - Subscribe to public delivery tracking updates | NONE
+Path: :token (Short-lived public tracking token)
+Query: ?last_event_id
+
+## Modules > Delivery > Zones
+Define delivery zones backed by logistics geofences.
+
+### POST /modules/delivery/zones - Create a delivery zone | KEY
+Body: `{name*, description, color, enabled:boolean, geofence_type, lat:number, lng:number, radius_m:number, polygon:array[], metadata:{}}`
+
+### GET /modules/delivery/zones - List delivery zones | KEY
+Query: ?limit:integer ?cursor
+200: `{items*:[{id*, project_id*, geofence_id*, name*, description*, color*, enabled*:boolean, metadata*, created_at*}], next_cursor*}`
+
+### GET /modules/delivery/zones/{zone_id} - Get a delivery zone | KEY
+Path: :zone_id
+200: `{id*, project_id*, geofence_id*, name*, description*, color*, enabled*:boolean, metadata*, created_at*}`
+
+### PATCH /modules/delivery/zones/{zone_id} - Update a delivery zone | KEY
+Path: :zone_id
+Body: `{name, description, color, enabled:boolean, metadata:{}}`
+200: `{id*, project_id*, geofence_id*, name*, description*, color*, enabled*:boolean, metadata*, created_at*}`
+
+### DELETE /modules/delivery/zones/{zone_id} - Delete a delivery zone | KEY
+Path: :zone_id
+200: `{deleted*:boolean}`
+
+## Modules > Delivery > Hubs
+Manage delivery hubs (warehouses, kitchens, pickup points).
+
+### POST /modules/delivery/hubs - Create a delivery hub | KEY
+Body: `{name*, address, lat:number, lng:number, radius_km:number, metadata:{}}`
+
+### GET /modules/delivery/hubs - List delivery hubs | KEY
+Query: ?limit:integer ?cursor
+200: `{items*:[{id*, project_id*, name*, address*, lat*, lng*, radius_km*:number, google_maps_url*, metadata*, created_at*}], next_cursor*}`
+
+### GET /modules/delivery/hubs/{hub_id} - Get a delivery hub | KEY
+Path: :hub_id
+200: `{id*, project_id*, name*, address*, lat*, lng*, radius_km*:number, google_maps_url*, metadata*, created_at*}`
+
+### PATCH /modules/delivery/hubs/{hub_id} - Update a delivery hub | KEY
+Path: :hub_id
+Body: `{name, address, lat:number, lng:number, radius_km:number, metadata:{}}`
+200: `{id*, project_id*, name*, address*, lat*, lng*, radius_km*:number, google_maps_url*, metadata*, created_at*}`
+
+### DELETE /modules/delivery/hubs/{hub_id} - Delete a delivery hub | KEY
+Path: :hub_id
+200: `{deleted*:boolean}`
+
+## Modules > Delivery > Notifications
+Configure which delivery events trigger notifications.
+
+### GET /modules/delivery/notifications - List notification configs | KEY
+200: `{items*:[{id*, project_id*, event*, enabled*:boolean, channel*, created_at*}]}`
+
+### PUT /modules/delivery/notifications - Upsert notification config | KEY
+Body: `{event*, enabled*:boolean, channel}`
+200: `{id*, project_id*, event*, enabled*:boolean, channel*, created_at*}`
+
+## Modules > Delivery > Webhooks
+Manage webhooks for delivery-specific event topics.
+
+### GET /modules/delivery/webhooks - List delivery webhooks | KEY
+200: `{items*:[{id*, name*, url*, topics*:string[], enabled*:boolean, success_count*:number, failure_count*:number, last_attempted_at*, last_status*, created_at*}]}`
+
+### POST /modules/delivery/webhooks - Create a delivery webhook | KEY
+Body: `{name*, url*, topics*:string[], secret}`
+
+## Modules > Delivery > ETA Fences
+Create and manage ETA fences for delivery destinations. Receive breach webhooks when a tracked entity's driving ETA drops below the configured threshold.
+
+### POST /modules/delivery/eta-fences - Create a delivery ETA fence | KEY
+Body: `{name*, dest_lat*:number, dest_lng*:number, threshold_min*:number, entity_types:string[], avg_speed_kmh:number, heuristic_multiplier:number, metadata:{}}`
+
+### GET /modules/delivery/eta-fences - List delivery ETA fences | KEY
+Query: ?enabled ?limit:integer ?cursor
+200: `{fences*:[{id*, project_id*, name*, dest_lat*:number, dest_lng*:number, threshold_min*:number, entity_types*, avg_speed_kmh*:number, heuristic_multiplier*:number, enabled*:boolean, google_maps_url*, metadata*, created_at*}], next_cursor*}`
+
+### GET /modules/delivery/eta-fences/{fence_id} - Get a delivery ETA fence | KEY
+Path: :fence_id
+200: `{id*, project_id*, name*, dest_lat*:number, dest_lng*:number, threshold_min*:number, entity_types*, avg_speed_kmh*:number, heuristic_multiplier*:number, enabled*:boolean, google_maps_url*, metadata*, created_at*}`
+
+### DELETE /modules/delivery/eta-fences/{fence_id} - Delete a delivery ETA fence | KEY
+Path: :fence_id
+200: `{deleted*:boolean}`
+
+## Modules > Delivery > Analytics
+Delivery performance analytics and driver statistics.
+
+### GET /modules/delivery/analytics/summary - Get delivery analytics summary | KEY
+Query: ?from ?to
+200: `{total_orders*:number, completed_orders*:number, failed_orders*:number, cancelled_orders*:number, avg_delivery_time_min*, active_drivers*:number}`
+
+### GET /modules/delivery/analytics/drivers - Get driver analytics | KEY
+Query: ?from ?to ?driver_id
+200: `{drivers*:[{driver_id*, total_orders*:number, completed*:number, failed*:number, avg_delivery_time_min*}]}`
+
+## Modules > Delivery > Export
+Export delivery data in JSON or CSV format.
+
+### GET /modules/delivery/export/orders - Export delivery orders | KEY
+Query: ?from ?to ?status ?format
+200: `[{id*, external_id*, status*, customer_id*, driver_id*, pickup_address*, dropoff_address*, created_at*, actual_dropoff_at*}]`
+
+## Core > Organizations
+Create and manage organizations.
+
+### GET /core/organizations - List organizations | AUTH
+200: `{data*:[{id*, name*, slug*, createdAt*}]}`
+
+### POST /core/organizations - Create an organization | AUTH
+Body: `{name*, slug}`
+
+### GET /core/organizations/{org_id} - Get an organization | KEY
+Path: :org_id
+200: `{id*, name*, slug*, createdAt*}`
+
+### PATCH /core/organizations/{org_id} - Update an organization | KEY
+Path: :org_id
+Body: `{name, slug}`
+200: `{id*, name*, slug*, createdAt*}`
+
+### DELETE /core/organizations/{org_id} - Delete an organization | KEY
+Path: :org_id
+Body: `{confirm_name*}`
+
+### GET /core/organizations/{org_id}/members - List organization members | KEY
+Path: :org_id
+200: `[{user_id*, name*, email*, scopes*:string[], joined_at*}]`
+
+### POST /core/organizations/{org_id}/members/invite - Invite a member | KEY
+Path: :org_id
+Body: `{email*, scopes:string[], project_id}`
+
+### GET /core/organizations/{org_id}/my-scopes - Get current user's scopes | KEY
+Path: :org_id
+200: `{scopes*:string[]}`
+
+### PUT /core/organizations/{org_id}/members/{user_id}/scopes - Update member scopes | KEY
+Path: :org_id :user_id
+Body: `{scopes*:string[]}`
+
+### DELETE /core/organizations/{org_id}/members/{user_id} - Remove a member | KEY
+Path: :org_id :user_id
+
+## Core > Projects
+Projects live inside organizations and isolate KV namespaces, channels, jobs, and token balances.
+
+### GET /core/organizations/{org_id}/projects - List projects | KEY
+Path: :org_id
+200: `[{id*, orgId*, name*, description*, region*, createdAt*}]`
+
+### POST /core/organizations/{org_id}/projects - Create a project | KEY
+Path: :org_id
+Body: `{name*, description, region}`
+
+### GET /core/organizations/{org_id}/projects/{project_id} - Get a project | KEY
+Path: :org_id :project_id
+200: `{id*, orgId*, name*, description*, region*, createdAt*}`
+
+### DELETE /core/organizations/{org_id}/projects/{project_id} - Delete a project | KEY
+Path: :org_id :project_id
+
+## Core > Tokens
+Check project balances and query usage analytics.
+
+### GET /core/organizations/{org_id}/tokens - List tokens | KEY
+Path: :org_id
+Query: ?project_id
+200: `[{id*, name*, hint*, org_id*, project_id*, scopes*:string[], created_at*, expires_at*, last_used_at*, revoked*:boolean}]`
+
+### POST /core/organizations/{org_id}/tokens - Create a token | KEY
+Path: :org_id
+Body: `{name*, scopes*:string[], project_id, expires_at}`
+
+### DELETE /core/organizations/{org_id}/tokens/{token_id} - Revoke a token | KEY
+Path: :org_id :token_id
+
+### GET /core/tokens/topup-bundles - List top-up bundles | KEY
+200: `[{id*, tokens*:number, price*:number, rate_per_token*:number}]`
+
+### GET /core/tokens/balance - Get token balance | KEY
+200: `{org_id*, included_tokens_remaining*:number, topup_tokens_balance*:number, total_balance*:number}`
+
+### GET /core/tokens/usage - Get token usage analytics | KEY
+200: `{org_id*, granularity*, series*:[{period_start*, total*:number, by_primitive*:{}}]}`
+
+### POST /core/tokens/browser - Create browser token | KEY
+200: `{token*, expires_at*, ttl*:number, scopes*:string[], project_id*, org_id*}`
+
+## Core > Billing
+Subscription packages and usage data.
+
+### GET /core/billing/packages - List subscription packages | KEY
+200: `[{id*, name*, description*, price_monthly*:number, currency*, tokens_monthly*:number, rate_limits*:{requests_per_second*:number, max_channel_subscriptions*:number}}]`
+
+### POST /core/billing/{org_id}/free-plan - Switch organization to free plan | KEY
+Path: :org_id
+200: `{orgId*, packageId*, stripeCustomerId, stripeSubscriptionId, createdAt*, package*:{id*, name*, description*, price_monthly*:number, currency*, tokens_monthly*:number, rate_limits*:{requests_per_second*:number, max_channel_subscriptions*:number}}}`
+
+### GET /core/billing/{org_id}/subscription - Get active subscription | KEY
+Path: :org_id
+200: `{orgId*, packageId*, stripeCustomerId, stripeSubscriptionId, createdAt*, package*:{id*, name*, description*, price_monthly*:number, currency*, tokens_monthly*:number, rate_limits*:{requests_per_second*:number, max_channel_subscriptions*:number}}}`
+
+### GET /core/billing/{org_id}/usage - Get usage dashboard | KEY
+Path: :org_id
+200: `{plan*, billing_cycle_end*, included_tokens_remaining*:number, included_tokens_total*:number, topup_tokens_balance*:number, total_tokens_available*:number, tokens_used_this_cycle*:number, usage_percent*:number, rate_limit_per_second*:number, channel_subscriptions_limit*:number, usage_breakdown*:{kv_reads*:number, kv_writes*:number, kv_deletes*:number, channel_messages*:number, channel_connection_minutes*:number, jobs_created*:number, jobs_executed*:number, ai_responses*:number, ai_embeddings*:number, ai_rerank*:number, ai_moderations*:number, ai_audio*:number, ai_images*:number, ai_documents*:number, search_reads*:number, search_writes*:number, matching_solves*:number, ranking_queries*:number, ranking_events*:number}}`
+
+## MCP
+Model Context Protocol endpoint. SaaSignal exposes a stateless, POST-only MCP transport on `/mcp`; standalone SSE sessions are not provided, so unsupported GET/DELETE requests return `405 Method Not Allowed`. Primary auth is browser-based OAuth on the frontend host, with project API keys still supported as a manual fallback. OAuth tokens are filtered during `tools/list` and challenged with `insufficient_scope` when required. Documented HTTP routes are exposed automatically as MCP tools using their OpenAPI operationId values, while legacy operational aliases remain available.
+
+### GET /.well-known/oauth-protected-resource/mcp - MCP OAuth protected resource metadata | NONE
+
+### POST /mcp - Model Context Protocol endpoint | KEY
+
+## Meta
+Health check, API docs, OpenAPI specification, and AI-first documentation (agent skill, llms.txt, human-readable markdown, landing page).
+
+### GET /.well-known/oauth-protected-resource - API OAuth protected resource metadata | NONE
+
+### GET / - API landing page | NONE
+
+### GET /skills/saasignal - SaaSignal agent skill | NONE
+
+### GET /scalar - Interactive API reference (Scalar) | NONE
+
+### GET /livez - Liveness probe | NONE
+200: `{status*}`
+
+### GET /readyz - Readiness probe | NONE
+200: `{status*, version*, checks*:{database*}}`
+
+### GET /healthz - Health check | NONE
+200: `{status*, version*, uptime*, checks*:{database*}}`
+
+### GET /llms.txt - LLM documentation index (llmstxt.org spec) | NONE
+
+### GET /llms-full.txt - Full LLM-optimized API documentation | NONE
+
+### GET /to-humans.md - Human-readable API documentation (Markdown) | NONE
+
+### GET /api/openapi.json - OpenAPI specification | NONE
+200: `{}`
+
+### GET /robots.txt - Crawler directives (robots.txt) | NONE
+
+### GET /sitemap.xml - XML sitemap | NONE
+
+## Modules > Delivery > Dispatch Rules
+
+### POST /modules/delivery/dispatch-rules - Create a dispatch rule | KEY
+Body: `{name*, priority*:integer, conditions*:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action*:{strategy*, fallback}, enabled:boolean, metadata}`
+
+### GET /modules/delivery/dispatch-rules - List dispatch rules | KEY
+200: `{rules*:[{id*, project_id*, name*, priority*:number, conditions*:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action*:{strategy*, fallback}, enabled*:boolean, metadata*, created_at*}]}`
+
+### GET /modules/delivery/dispatch-rules/{rule_id} - Get a dispatch rule | KEY
+Path: :rule_id
+200: `{id*, project_id*, name*, priority*:number, conditions*:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action*:{strategy*, fallback}, enabled*:boolean, metadata*, created_at*}`
+
+### PATCH /modules/delivery/dispatch-rules/{rule_id} - Update a dispatch rule | KEY
+Path: :rule_id
+Body: `{name, priority:integer, conditions:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action:{strategy*, fallback}, enabled:boolean, metadata}`
+200: `{id*, project_id*, name*, priority*:number, conditions*:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action*:{strategy*, fallback}, enabled*:boolean, metadata*, created_at*}`
+
+### DELETE /modules/delivery/dispatch-rules/{rule_id} - Delete a dispatch rule | KEY
+Path: :rule_id
+
+### POST /modules/delivery/dispatch-rules/evaluate - Evaluate dispatch rules (dry-run) | KEY
+Body: `{lat*:number, lng*:number, time}`
+200: `{matched*:boolean, rule:{id*, project_id*, name*, priority*:number, conditions*:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action*:{strategy*, fallback}, enabled*:boolean, metadata*, created_at*}}`
+
+### POST /modules/delivery/auto-dispatch - Auto-dispatch an order using rules | KEY
+Body: `{order_id*}`
+200: `{assigned*:boolean, driver_id, rule_id, reason, queued:boolean, fallback_used:boolean}`
+
+## Route Surface Appendix
+
+### HEAD /infra/storage/buckets/{bucketId}/objects/* - Get object metadata
+Auto-added from the local OpenAPI spec to keep llms.txt route-complete.
