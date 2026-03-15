@@ -1,0 +1,36 @@
+name: Sync SaaSignal content
+
+on:
+  schedule:
+    - cron: "0 6 * * 1" # weekly on Monday at 06:00 UTC
+  workflow_dispatch:
+  repository_dispatch:
+    types: [saasignal-deploy]
+
+permissions:
+  contents: write
+
+jobs:
+  sync:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - uses: oven-sh/setup-bun@v2
+        with:
+          bun-version: latest
+
+      - name: Sync content from API
+        run: bun run scripts/sync.ts
+
+      - name: Commit and push if changed
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add -A
+          if git diff --cached --quiet; then
+            echo "No changes to commit"
+          else
+            git commit -m "chore: sync content from SaaSignal API"
+            git push
+          fi
