@@ -1,0 +1,2 @@
+This file is auto-populated by `bun run saasignal-agent/scripts/sync.ts`.
+Run the sync script to fetch the latest content from https://api.saasignal.saastemly.com/llms-full.txt

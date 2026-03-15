@@ -1,0 +1,11 @@
+{
+  "name": "saasignal",
+  "description": "SaaSignal agent skill and MCP server configuration",
+  "version": "1.0.0",
+  "mcpServers": {
+    "saasignal": {
+      "command": "npx",
+      "args": ["-y", "mcp-remote", "https://api.saasignal.saastemly.com/mcp"]
+    }
+  }
+}
