@@ -956,6 +956,35 @@ Body: `{order_id*, radius_km:number, limit:integer}`
 Body: `{order_id*}`
 200: `{assigned*:boolean, driver_id, reason}`
 
+## Modules > Delivery > Dispatch Rules
+Rule-based auto-dispatch: create, evaluate, and apply dispatch rules to automatically assign drivers to orders.
+
+### POST /modules/delivery/dispatch-rules - Create a dispatch rule | KEY
+Body: `{name*, priority*:integer, conditions*:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action*:{strategy*, fallback}, enabled:boolean, metadata}`
+
+### GET /modules/delivery/dispatch-rules - List dispatch rules | KEY
+200: `{rules*:[{id*, project_id*, name*, priority*:number, conditions*:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action*:{strategy*, fallback}, enabled*:boolean, metadata*, created_at*}]}`
+
+### GET /modules/delivery/dispatch-rules/{rule_id} - Get a dispatch rule | KEY
+Path: :rule_id
+200: `{id*, project_id*, name*, priority*:number, conditions*:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action*:{strategy*, fallback}, enabled*:boolean, metadata*, created_at*}`
+
+### PATCH /modules/delivery/dispatch-rules/{rule_id} - Update a dispatch rule | KEY
+Path: :rule_id
+Body: `{name, priority:integer, conditions:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action:{strategy*, fallback}, enabled:boolean, metadata}`
+200: `{id*, project_id*, name*, priority*:number, conditions*:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action*:{strategy*, fallback}, enabled*:boolean, metadata*, created_at*}`
+
+### DELETE /modules/delivery/dispatch-rules/{rule_id} - Delete a dispatch rule | KEY
+Path: :rule_id
+
+### POST /modules/delivery/dispatch-rules/evaluate - Evaluate dispatch rules (dry-run) | KEY
+Body: `{lat*:number, lng*:number, time}`
+200: `{matched*:boolean, rule:{id*, project_id*, name*, priority*:number, conditions*:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action*:{strategy*, fallback}, enabled*:boolean, metadata*, created_at*}}`
+
+### POST /modules/delivery/auto-dispatch - Auto-dispatch an order using rules | KEY
+Body: `{order_id*}`
+200: `{assigned*:boolean, driver_id, rule_id, reason, queued:boolean, fallback_used:boolean}`
+
 ## Modules > Delivery > Tracking
 Generate public tracking links, render tracking pages, and stream live delivery updates to customers and drivers.
 
@@ -1101,6 +1130,638 @@ Export delivery data in JSON or CSV format.
 Query: ?from ?to ?status ?format
 200: `[{id*, external_id*, status*, customer_id*, driver_id*, pickup_address*, dropoff_address*, created_at*, actual_dropoff_at*}]`
 
+## Modules > Commerce > Settings
+Configure commerce module behavior per project: currency, tax, inventory tracking, review moderation, cart TTL.
+
+### GET /modules/commerce/settings - Get commerce settings | KEY
+200: `{id*, project_id*, default_currency*, tax_inclusive*:boolean, auto_capture_payments*:boolean, inventory_tracking*:boolean, allow_backorders*:boolean, low_stock_threshold*:number, cart_ttl_hours*:number, review_moderation*, review_auto_approve_min_rating*, max_cart_items*:number, order_number_prefix*, created_at*}`
+
+### PATCH /modules/commerce/settings - Update commerce settings | KEY
+Body: `{default_currency, tax_inclusive:boolean, auto_capture_payments:boolean, inventory_tracking:boolean, allow_backorders:boolean, low_stock_threshold:integer, cart_ttl_hours:integer, review_moderation, review_auto_approve_min_rating:integer, max_cart_items:integer, order_number_prefix}`
+200: `{id*, project_id*, default_currency*, tax_inclusive*:boolean, auto_capture_payments*:boolean, inventory_tracking*:boolean, allow_backorders*:boolean, low_stock_threshold*:number, cart_ttl_hours*:number, review_moderation*, review_auto_approve_min_rating*, max_cart_items*:number, order_number_prefix*, created_at*}`
+
+## Modules > Commerce > Catalogs
+Manage product catalogs (storefronts) with multi-currency support.
+
+### POST /modules/commerce/catalogs - Create a catalog | KEY
+Body: `{name*, slug, description, status, metadata:{}}`
+
+### GET /modules/commerce/catalogs - List catalogs | KEY
+Query: ?limit:integer ?cursor
+200: `{items*:[{id*, project_id*, name*, slug*, description*, status*, metadata*, created_at*, updated_at*}], next_cursor*}`
+
+### GET /modules/commerce/catalogs/{catalog_id} - Get a catalog | KEY
+Path: :catalog_id
+200: `{id*, project_id*, name*, slug*, description*, status*, metadata*, created_at*, updated_at*}`
+
+### PATCH /modules/commerce/catalogs/{catalog_id} - Update a catalog | KEY
+Path: :catalog_id
+Body: `{name, slug, description, status, metadata:{}}`
+200: `{id*, project_id*, name*, slug*, description*, status*, metadata*, created_at*, updated_at*}`
+
+### DELETE /modules/commerce/catalogs/{catalog_id} - Delete a catalog | KEY
+Path: :catalog_id
+200: `{deleted*:boolean}`
+
+## Modules > Commerce > Categories
+Hierarchical product categories within catalogs, with tree traversal.
+
+### POST /modules/commerce/categories - Create a category | KEY
+Body: `{catalog_id*, parent_id, name*, slug, description, sort_order:integer, status, metadata:{}}`
+
+### GET /modules/commerce/categories - List categories | KEY
+Query: ?catalog_id ?parent_id ?limit:integer ?cursor
+200: `{items*:[{id*, project_id*, catalog_id*, parent_id*, name*, slug*, description*, sort_order*:number, status*, metadata*, created_at*, updated_at*}], next_cursor*}`
+
+### GET /modules/commerce/categories/{category_id} - Get a category | KEY
+Path: :category_id
+200: `{id*, project_id*, catalog_id*, parent_id*, name*, slug*, description*, sort_order*:number, status*, metadata*, created_at*, updated_at*}`
+
+### PATCH /modules/commerce/categories/{category_id} - Update a category | KEY
+Path: :category_id
+Body: `{catalog_id, parent_id, name, slug, description, sort_order:integer, status, metadata:{}}`
+200: `{id*, project_id*, catalog_id*, parent_id*, name*, slug*, description*, sort_order*:number, status*, metadata*, created_at*, updated_at*}`
+
+### DELETE /modules/commerce/categories/{category_id} - Delete a category | KEY
+Path: :category_id
+200: `{deleted*:boolean}`
+
+### GET /modules/commerce/categories/{category_id}/tree - Get category tree | KEY
+Path: :category_id
+200: `{id*, project_id*, catalog_id*, parent_id*, name*, slug*, description*, sort_order*:number, status*, metadata*, created_at*, updated_at*, children*:any[]}`
+
+## Modules > Commerce > Products
+Full product lifecycle: create, list, search, update, and archive products with pricing, variants, and inventory.
+
+### POST /modules/commerce/products - Create a product | KEY
+Body: `{catalog_id, category_id, name*, slug, description, type, status, price*:number, compare_at_price:number, cost_price:number, currency, sku, barcode, weight:number, weight_unit, taxable:boolean, tax_code, track_inventory:boolean, quantity:integer, allow_backorder:boolean, images:string[], tags:string[], metadata:{}}`
+
+### GET /modules/commerce/products - List products | KEY
+Query: ?catalog_id ?category_id ?status ?type ?q ?min_price:number ?max_price:number ?tags ?limit:integer ?cursor
+200: `{items*:[{id*, project_id*, catalog_id*, category_id*, name*, slug*, description*, type*, status*, price*:number, compare_at_price*, cost_price*, currency*, sku*, barcode*, weight*, weight_unit*, taxable*:boolean, tax_code*, track_inventory*:boolean, quantity*:number, allow_backorder*:boolean, images*, tags*, metadata*, created_at*, updated_at*}], next_cursor*}`
+
+### GET /modules/commerce/products/{product_id} - Get a product | KEY
+Path: :product_id
+200: `{id*, project_id*, catalog_id*, category_id*, name*, slug*, description*, type*, status*, price*:number, compare_at_price*, cost_price*, currency*, sku*, barcode*, weight*, weight_unit*, taxable*:boolean, tax_code*, track_inventory*:boolean, quantity*:number, allow_backorder*:boolean, images*, tags*, metadata*, created_at*, updated_at*}`
+
+### PATCH /modules/commerce/products/{product_id} - Update a product | KEY
+Path: :product_id
+Body: `{catalog_id, category_id, name, slug, description, type, status, price:number, compare_at_price, cost_price, currency, sku, barcode, weight, weight_unit, taxable:boolean, tax_code, track_inventory:boolean, quantity:integer, allow_backorder:boolean, images:string[], tags:string[], metadata:{}}`
+200: `{id*, project_id*, catalog_id*, category_id*, name*, slug*, description*, type*, status*, price*:number, compare_at_price*, cost_price*, currency*, sku*, barcode*, weight*, weight_unit*, taxable*:boolean, tax_code*, track_inventory*:boolean, quantity*:number, allow_backorder*:boolean, images*, tags*, metadata*, created_at*, updated_at*}`
+
+### DELETE /modules/commerce/products/{product_id} - Delete a product | KEY
+Path: :product_id
+200: `{deleted*:boolean}`
+
+## Modules > Commerce > Variants
+Product variants (size, color, material) with independent pricing and inventory tracking.
+
+### POST /modules/commerce/products/{product_id}/variants - Create a variant | KEY
+Path: :product_id
+Body: `{name*, sku, barcode, price*:number, compare_at_price:number, cost_price:number, weight:number, weight_unit, track_inventory:boolean, quantity:integer, allow_backorder:boolean, sort_order:integer, options:{}, images:string[], metadata:{}}`
+
+### GET /modules/commerce/products/{product_id}/variants - List variants | KEY
+Path: :product_id
+200: `{items*:[{id*, project_id*, product_id*, name*, sku*, barcode*, price*:number, compare_at_price*, cost_price*, weight*, weight_unit*, track_inventory*:boolean, quantity*:number, allow_backorder*:boolean, sort_order*:number, options*, images*, metadata*, created_at*, updated_at*}]}`
+
+### GET /modules/commerce/products/{product_id}/variants/{variant_id} - Get a variant | KEY
+Path: :product_id :variant_id
+200: `{id*, project_id*, product_id*, name*, sku*, barcode*, price*:number, compare_at_price*, cost_price*, weight*, weight_unit*, track_inventory*:boolean, quantity*:number, allow_backorder*:boolean, sort_order*:number, options*, images*, metadata*, created_at*, updated_at*}`
+
+### PATCH /modules/commerce/products/{product_id}/variants/{variant_id} - Update a variant | KEY
+Path: :product_id :variant_id
+Body: `{name, sku, barcode, price:number, compare_at_price, cost_price, weight, weight_unit, track_inventory:boolean, quantity:integer, allow_backorder:boolean, sort_order:integer, options:{}, images:string[], metadata:{}}`
+200: `{id*, project_id*, product_id*, name*, sku*, barcode*, price*:number, compare_at_price*, cost_price*, weight*, weight_unit*, track_inventory*:boolean, quantity*:number, allow_backorder*:boolean, sort_order*:number, options*, images*, metadata*, created_at*, updated_at*}`
+
+### DELETE /modules/commerce/products/{product_id}/variants/{variant_id} - Delete a variant | KEY
+Path: :product_id :variant_id
+200: `{deleted*:boolean}`
+
+## Modules > Commerce > Inventory
+Track stock levels, adjust quantities, and receive low-stock alerts.
+
+### GET /modules/commerce/inventory - List inventory | KEY
+Query: ?product_id ?low_stock_only:boolean ?limit:integer ?cursor
+200: `{items*:[{id*, product_id*, variant_id*, quantity*:number, reserved*:number, incoming*:number}], next_cursor*}`
+
+### GET /modules/commerce/inventory/{inventory_id} - Get inventory | KEY
+Path: :inventory_id
+200: `{id*, product_id*, variant_id*, quantity*:number, reserved*:number, incoming*:number}`
+
+### PATCH /modules/commerce/inventory/{inventory_id} - Update inventory | KEY
+Path: :inventory_id
+Body: `{quantity:integer, incoming:integer}`
+200: `{id*, product_id*, variant_id*, quantity*:number, reserved*:number, incoming*:number}`
+
+### POST /modules/commerce/inventory/{inventory_id}/adjust - Adjust inventory | KEY
+Path: :inventory_id
+Body: `{adjustment*:integer, reason}`
+200: `{id*, product_id*, variant_id*, quantity*:number, reserved*:number, incoming*:number}`
+
+## Modules > Commerce > Customers
+Manage commerce customers with addresses, order history, and marketing preferences.
+
+### POST /modules/commerce/customers - Create a customer | KEY
+Body: `{name*, external_id, phone, email, tags:string[], metadata:{}}`
+
+### GET /modules/commerce/customers - List customers | KEY
+Query: ?email ?q ?tags ?limit:integer ?cursor
+200: `{items*:[{id*, project_id*, external_id*, email*, name*, phone*, tags*, metadata*, created_at*, updated_at*}], next_cursor*}`
+
+### GET /modules/commerce/customers/{customer_id} - Get a customer | KEY
+Path: :customer_id
+200: `{id*, project_id*, external_id*, email*, name*, phone*, tags*, metadata*, created_at*, updated_at*, addresses*:[{id*, customer_id*, label*, address_line*, city*, state*, postal_code*, country*, is_default*:boolean, metadata*, created_at*}]}`
+
+### PATCH /modules/commerce/customers/{customer_id} - Update a customer | KEY
+Path: :customer_id
+Body: `{name, external_id, phone, email, tags:string[], metadata:{}}`
+200: `{id*, project_id*, external_id*, email*, name*, phone*, tags*, metadata*, created_at*, updated_at*}`
+
+### DELETE /modules/commerce/customers/{customer_id} - Delete a customer | KEY
+Path: :customer_id
+200: `{deleted*:boolean}`
+
+### POST /modules/commerce/customers/{customer_id}/addresses - Add customer address | KEY
+Path: :customer_id
+Body: `{label, address_line*, city, state, postal_code, country, is_default:boolean, metadata:{}}`
+
+### GET /modules/commerce/customers/{customer_id}/addresses - List customer addresses | KEY
+Path: :customer_id
+200: `{items*:[{id*, customer_id*, label*, address_line*, city*, state*, postal_code*, country*, is_default*:boolean, metadata*, created_at*}]}`
+
+### DELETE /modules/commerce/customers/{customer_id}/addresses/{address_id} - Delete customer address | KEY
+Path: :customer_id :address_id
+200: `{deleted*:boolean}`
+
+## Modules > Commerce > Carts
+Shopping carts with item management, discount codes, and checkout to create orders.
+
+### POST /modules/commerce/carts - Create a cart | KEY
+Body: `{customer_id, session_id, currency, metadata:{}}`
+
+### GET /modules/commerce/carts/{cart_id} - Get a cart | KEY
+Path: :cart_id
+200: `{id*, status*, currency*, items*:any[], subtotal*:number, item_count*:number}`
+
+### POST /modules/commerce/carts/{cart_id}/items - Add item to cart | KEY
+Path: :cart_id
+Body: `{product_id*, variant_id, quantity:integer, metadata:{}}`
+200: `{id*, status*, items*:any[], subtotal*:number, item_count*:number}`
+
+### PATCH /modules/commerce/carts/{cart_id}/items/{item_id} - Update cart item quantity | KEY
+Path: :cart_id :item_id
+Body: `{quantity*:integer}`
+200: `{id*, status*, items*:any[], subtotal*:number, item_count*:number}`
+
+### DELETE /modules/commerce/carts/{cart_id}/items/{item_id} - Remove cart item | KEY
+Path: :cart_id :item_id
+200: `{id*, status*, items*:any[], subtotal*:number, item_count*:number}`
+
+### POST /modules/commerce/carts/{cart_id}/discount - Apply discount to cart | KEY
+Path: :cart_id
+Body: `{code*}`
+200: `{id*, status*, discount_code*, items*:any[], subtotal*:number}`
+
+### DELETE /modules/commerce/carts/{cart_id}/discount - Remove discount from cart | KEY
+Path: :cart_id
+200: `{id*, status*, discount_code*, items*:any[], subtotal*:number}`
+
+### POST /modules/commerce/carts/{cart_id}/checkout - Checkout a cart | KEY
+Path: :cart_id
+Body: `{shipping_address, billing_address, notes, metadata:{}}`
+
+## Modules > Commerce > Orders
+Order lifecycle management with state machine transitions: pending → confirmed → processing → shipped → delivered → completed.
+
+### GET /modules/commerce/orders - List orders | KEY
+Query: ?status ?payment_status ?fulfillment_status ?customer_id ?from ?to ?limit:integer ?cursor
+200: `{items*:[{id*, order_number*, status*, total*:number}], next_cursor*}`
+
+### GET /modules/commerce/orders/{order_id} - Get an order | KEY
+Path: :order_id
+200: `{id*, order_number*, status*, total*:number, items*:any[], payments*:any[], recent_events*:any[]}`
+
+### PATCH /modules/commerce/orders/{order_id} - Update an order | KEY
+Path: :order_id
+Body: `{shipping_address, billing_address, notes, metadata:{}}`
+200: `{id*, order_number*, status*, total*:number}`
+
+### DELETE /modules/commerce/orders/{order_id} - Delete an order | KEY
+Path: :order_id
+200: `{deleted*:boolean}`
+
+### POST /modules/commerce/orders/{order_id}/transition - Transition order status | KEY
+Path: :order_id
+Body: `{status*, cancel_reason, actor}`
+200: `{id*, order_number*, status*, total*:number}`
+
+### GET /modules/commerce/orders/{order_id}/events - List order events | KEY
+Path: :order_id
+200: `[{id*, order_id*, event*, actor*, data*, created_at*}]`
+
+## Modules > Commerce > Payments
+Payment records with state machine: pending → authorized → captured → refunded. Supports multiple gateways.
+
+### POST /modules/commerce/orders/{order_id}/payments - Create a payment | KEY
+Path: :order_id
+Body: `{external_id, method*, amount*:number, currency*, gateway, gateway_data, metadata:{}}`
+
+### GET /modules/commerce/orders/{order_id}/payments - List payments for an order | KEY
+Path: :order_id
+200: `{items*:[{id*, order_id*, method*, status*, amount*:number, currency*}], next_cursor*}`
+
+### GET /modules/commerce/orders/{order_id}/payments/{payment_id} - Get a payment | KEY
+Path: :order_id :payment_id
+200: `{id*, order_id*, method*, status*, amount*:number, currency*}`
+
+### POST /modules/commerce/orders/{order_id}/payments/{payment_id}/transition - Transition payment status | KEY
+Path: :order_id :payment_id
+Body: `{status*, refund_amount:number, error_message, actor}`
+200: `{id*, order_id*, method*, status*, amount*:number}`
+
+## Modules > Commerce > Reviews
+Product reviews with ratings, verified purchase detection, and moderation workflow (pending → approved/rejected/flagged).
+
+### POST /modules/commerce/reviews - Create a review | KEY
+Body: `{product_id*, customer_id, order_id, rating*:integer, title, body, images:any[], metadata:{}}`
+
+### GET /modules/commerce/reviews - List reviews | KEY
+Query: ?product_id ?customer_id ?status ?min_rating:integer ?limit:integer ?cursor
+200: `{items*:[{id*, product_id*, rating*:number, status*}], next_cursor*}`
+
+### GET /modules/commerce/reviews/{review_id} - Get a review | KEY
+Path: :review_id
+200: `{id*, product_id*, rating*:number, status*, title*, body*}`
+
+### DELETE /modules/commerce/reviews/{review_id} - Delete a review | KEY
+Path: :review_id
+200: `{deleted*:boolean}`
+
+### POST /modules/commerce/reviews/{review_id}/transition - Moderate a review | KEY
+Path: :review_id
+Body: `{status*, moderator_notes}`
+200: `{id*, product_id*, rating*:number, status*}`
+
+## Modules > Commerce > Discounts
+Discount codes: percentage, fixed amount, free shipping, buy-X-get-Y. Usage limits, date ranges, and product targeting.
+
+### POST /modules/commerce/discounts - Create a discount | KEY
+Body: `{code*, type*, value*:number, min_purchase_amount:number, max_discount_amount:number, applies_to, applies_to_ids:string[], usage_limit:integer, per_customer_limit:integer, starts_at, ends_at, enabled:boolean, buy_quantity:integer, get_quantity:integer, metadata:{}}`
+
+### GET /modules/commerce/discounts - List discounts | KEY
+Query: ?enabled:boolean ?type ?limit:integer ?cursor
+200: `{items*:[{id*, code*, type*, value*:number, enabled*:boolean}], next_cursor*}`
+
+### GET /modules/commerce/discounts/{discount_id} - Get a discount | KEY
+Path: :discount_id
+200: `{id*, code*, type*, value*:number, enabled*:boolean, usage_count*:number}`
+
+### PATCH /modules/commerce/discounts/{discount_id} - Update a discount | KEY
+Path: :discount_id
+Body: `{code, type, value:number, min_purchase_amount, max_discount_amount, applies_to, applies_to_ids:string[], usage_limit, per_customer_limit, starts_at, ends_at, enabled:boolean, buy_quantity, get_quantity, metadata:{}}`
+200: `{id*, code*, type*, value*:number, enabled*:boolean}`
+
+### DELETE /modules/commerce/discounts/{discount_id} - Delete a discount | KEY
+Path: :discount_id
+200: `{deleted*:boolean}`
+
+### POST /modules/commerce/discounts/validate - Validate a discount code | KEY
+Body: `{code*, cart_subtotal:number, customer_id, product_ids:string[]}`
+200: `{valid*:boolean, reason, discount}`
+
+## Modules > Commerce > Webhooks
+Manage webhooks for commerce-specific event topics (orders, payments, inventory, reviews).
+
+### GET /modules/commerce/webhooks - List commerce webhooks | KEY
+200: `{items*:[{id*, name*, url*, topics*:string[], enabled*:boolean, success_count*:number, failure_count*:number, last_attempted_at*, last_status*, created_at*}]}`
+
+### POST /modules/commerce/webhooks - Create a commerce webhook | KEY
+Body: `{name*, url*, topics*:string[], secret}`
+
+## Modules > Commerce > Analytics
+Commerce analytics: revenue summary, top products, and time-series revenue data.
+
+### GET /modules/commerce/analytics/summary - Get commerce analytics summary | KEY
+Query: ?from ?to
+200: `{total_orders*:number, total_revenue*:number, average_order_value*:number, total_customers*:number, total_products_sold*:number, period*:{from*, to*}}`
+
+### GET /modules/commerce/analytics/top-products - Get top-selling products | KEY
+Query: ?from ?to ?limit:integer
+200: `{items*:[{product_id*, name*, total_sold*:number, total_revenue*:number}]}`
+
+### GET /modules/commerce/analytics/revenue - Get revenue over time | KEY
+Query: ?from ?to ?group_by
+200: `{items*:[{period*, revenue*:number, order_count*:number}]}`
+
+## Modules > Commerce > Export
+Export commerce data (orders, products, customers) in JSON or CSV format.
+
+### GET /modules/commerce/export/orders - Export commerce orders | KEY
+Query: ?from ?to ?status ?format
+200: `[{id*, status*, total*:number, currency*, customer_id*, items_count*:number, created_at*}]`
+
+### GET /modules/commerce/export/products - Export commerce products | KEY
+Query: ?catalog_id ?status ?format
+200: `[{id*, name*, status*, price*:number, currency*, catalog_id*, created_at*}]`
+
+### GET /modules/commerce/export/customers - Export commerce customers | KEY
+Query: ?from ?to ?format
+200: `[{id*, email*, name*, total_orders*:number, total_spent*:number, created_at*}]`
+
+## Modules > Booking > Settings
+Per-project booking configuration: timezone, slot duration, advance limits, and cancellation policy.
+
+### GET /modules/booking/settings - Get booking settings | KEY
+200: `{id*, project_id*, timezone*, slot_duration_minutes*:number, auto_confirm*:boolean, buffer_minutes*:number, max_advance_days*:number, min_advance_minutes*:number, cancellation_policy_hours*:number, booking_number_prefix*, created_at*}`
+
+### PATCH /modules/booking/settings - Update booking settings | KEY
+Body: `{timezone, slot_duration_minutes:integer, auto_confirm:boolean, buffer_minutes:integer, max_advance_days:integer, min_advance_minutes:integer, cancellation_policy_hours:integer, booking_number_prefix}`
+200: `{id*, project_id*, timezone*, slot_duration_minutes*:number, auto_confirm*:boolean, buffer_minutes*:number, max_advance_days*:number, min_advance_minutes*:number, cancellation_policy_hours*:number, booking_number_prefix*, created_at*}`
+
+## Modules > Booking > Resources
+Bookable resources (rooms, tables, staff, equipment) with capacity and metadata.
+
+### POST /modules/booking/resources - Create a resource | KEY
+Body: `{name*, type, description, capacity:integer, duration_min_minutes:integer, duration_max_minutes:integer, duration_default_minutes:integer, enabled:boolean, metadata:{}}`
+
+### GET /modules/booking/resources - List resources | KEY
+Query: ?type ?enabled:boolean ?limit:integer ?cursor
+200: `{items*:[{id*, project_id*, name*, type*, description*, capacity*:number, duration_min_minutes*, duration_max_minutes*, duration_default_minutes*, enabled*:boolean, metadata*, updated_at*, created_at*}], next_cursor*}`
+
+### GET /modules/booking/resources/{resource_id} - Get a resource | KEY
+Path: :resource_id
+200: `{id*, project_id*, name*, type*, description*, capacity*:number, duration_min_minutes*, duration_max_minutes*, duration_default_minutes*, enabled*:boolean, metadata*, updated_at*, created_at*}`
+
+### PATCH /modules/booking/resources/{resource_id} - Update a resource | KEY
+Path: :resource_id
+Body: `{name, type, description, capacity:integer, duration_min_minutes, duration_max_minutes, duration_default_minutes, enabled:boolean, metadata:{}}`
+200: `{id*, project_id*, name*, type*, description*, capacity*:number, duration_min_minutes*, duration_max_minutes*, duration_default_minutes*, enabled*:boolean, metadata*, updated_at*, created_at*}`
+
+### DELETE /modules/booking/resources/{resource_id} - Delete a resource | KEY
+Path: :resource_id
+200: `{deleted*:boolean}`
+
+## Modules > Booking > Availability
+Availability rules and slot computation for resources.
+
+### PUT /modules/booking/resources/{resource_id}/availability - Set availability rules | KEY
+Path: :resource_id
+Body: `{rules*:[{day_of_week, specific_date, start_time*, end_time*, is_available:boolean}]}`
+200: `{items*:[{id*, project_id*, resource_id*, day_of_week*, specific_date*, start_time*, end_time*, is_override*:boolean, is_available*:boolean, created_at*}]}`
+
+### GET /modules/booking/resources/{resource_id}/availability - Get availability rules | KEY
+Path: :resource_id
+200: `{items*:[{id*, project_id*, resource_id*, day_of_week*, specific_date*, start_time*, end_time*, is_override*:boolean, is_available*:boolean, created_at*}]}`
+
+### GET /modules/booking/resources/{resource_id}/slots - Get available slots | KEY
+Path: :resource_id
+Query: ?date* ?duration:integer
+200: `{items*:[{start_time*, end_time*}]}`
+
+## Modules > Booking > Bookings
+Reservations with status lifecycle: pending → confirmed → checked_in → completed / cancelled / no_show.
+
+### POST /modules/booking/bookings - Create a booking | KEY
+Body: `{resource_id*, customer_id, start_time*, end_time, duration_minutes:integer, title, notes, metadata:{}}`
+
+### GET /modules/booking/bookings - List bookings | KEY
+Query: ?status ?resource_id ?customer_id ?from ?to ?limit:integer ?cursor
+200: `{items*:[{id*, project_id*, booking_number*, resource_id*, customer_id*, status*, start_time*, end_time*, duration_minutes*, title*, notes*, cancel_reason*, cancelled_at*, checked_in_at*, completed_at*, metadata*, updated_at*, created_at*}], next_cursor*}`
+
+### GET /modules/booking/bookings/{booking_id} - Get a booking | KEY
+Path: :booking_id
+200: `{id*, project_id*, booking_number*, resource_id*, customer_id*, status*, start_time*, end_time*, duration_minutes*, title*, notes*, cancel_reason*, cancelled_at*, checked_in_at*, completed_at*, metadata*, updated_at*, created_at*, recent_events*:[{id*, event*, actor*, data*, created_at*}]}`
+
+### PATCH /modules/booking/bookings/{booking_id} - Update a booking | KEY
+Path: :booking_id
+Body: `{title, notes, metadata:{}}`
+200: `{id*, project_id*, booking_number*, resource_id*, customer_id*, status*, start_time*, end_time*, duration_minutes*, title*, notes*, cancel_reason*, cancelled_at*, checked_in_at*, completed_at*, metadata*, updated_at*, created_at*, recent_events*:[{id*, event*, actor*, data*, created_at*}]}`
+
+### DELETE /modules/booking/bookings/{booking_id} - Delete a booking | KEY
+Path: :booking_id
+200: `{deleted*:boolean}`
+
+### POST /modules/booking/bookings/{booking_id}/transition - Transition booking status | KEY
+Path: :booking_id
+Body: `{status*, cancel_reason, actor}`
+200: `{id*, project_id*, booking_number*, resource_id*, customer_id*, status*, start_time*, end_time*, duration_minutes*, title*, notes*, cancel_reason*, cancelled_at*, checked_in_at*, completed_at*, metadata*, updated_at*, created_at*, recent_events*:[{id*, event*, actor*, data*, created_at*}]}`
+
+### GET /modules/booking/bookings/{booking_id}/events - Get booking events | KEY
+Path: :booking_id
+200: `{items*:[{id*, event*, actor*, data*, created_at*, booking_id*}]}`
+
+## Modules > Booking > Customers
+Manage booking customers with contact details and booking history.
+
+### POST /modules/booking/customers - Create a customer | KEY
+Body: `{name*, external_id, phone, email, tags:string[], metadata:{}}`
+
+### GET /modules/booking/customers - List customers | KEY
+Query: ?email ?q ?tags ?limit:integer ?cursor
+200: `{items*:[{id*, project_id*, external_id*, name*, email*, phone*, notes*, total_bookings*:number, no_show_count*:number, metadata*, updated_at*, created_at*}], next_cursor*}`
+
+### GET /modules/booking/customers/{customer_id} - Get a customer | KEY
+Path: :customer_id
+200: `{id*, project_id*, external_id*, name*, email*, phone*, notes*, total_bookings*:number, no_show_count*:number, metadata*, updated_at*, created_at*}`
+
+### PATCH /modules/booking/customers/{customer_id} - Update a customer | KEY
+Path: :customer_id
+Body: `{name, external_id, phone, email, tags:string[], metadata:{}}`
+200: `{id*, project_id*, external_id*, name*, email*, phone*, notes*, total_bookings*:number, no_show_count*:number, metadata*, updated_at*, created_at*}`
+
+### DELETE /modules/booking/customers/{customer_id} - Delete a customer | KEY
+Path: :customer_id
+200: `{deleted*:boolean}`
+
+## Modules > Booking > Blockers
+Calendar blocks (holidays, maintenance, staff leave) that override availability.
+
+### POST /modules/booking/blockers - Create a blocker | KEY
+Body: `{resource_id*, title, start_time*, end_time*, all_day:boolean, recurrence:{}, metadata:{}}`
+
+### GET /modules/booking/blockers - List blockers | KEY
+Query: ?resource_id ?from ?to ?limit:integer ?cursor
+200: `{items*:[{id*, project_id*, resource_id*, title*, start_time*, end_time*, all_day*:boolean, recurrence*, metadata*, created_at*}], next_cursor*}`
+
+### DELETE /modules/booking/blockers/{blocker_id} - Delete a blocker | KEY
+Path: :blocker_id
+200: `{deleted*:boolean}`
+
+## Modules > Booking > Webhooks
+Manage webhooks for booking-specific event topics (bookings, resources, availability).
+
+### GET /modules/booking/webhooks - List booking webhooks | KEY
+200: `{items*:[{id*, name*, url*, topics*:string[], enabled*:boolean, success_count*:number, failure_count*:number, last_attempted_at*, last_status*, created_at*}]}`
+
+### POST /modules/booking/webhooks - Create a booking webhook | KEY
+Body: `{name*, url*, topics*:string[], secret}`
+
+## Modules > Booking > Analytics
+Booking analytics: utilization rates, peak hours, and time-series booking data.
+
+### GET /modules/booking/analytics/summary - Get booking analytics summary | KEY
+Query: ?from ?to
+200: `{total_bookings*:number, completed_bookings*:number, cancelled_bookings*:number, no_show_bookings*:number, no_show_rate*:number, avg_duration_minutes*}`
+
+### GET /modules/booking/analytics/by-resource - Get bookings by resource | KEY
+Query: ?from ?to
+200: `{resources*:[{resource_id*, total_bookings*:number, completed*:number, cancelled*:number, no_show*:number}]}`
+
+### GET /modules/booking/analytics/by-period - Get bookings by period | KEY
+Query: ?from ?to ?group_by
+200: `{series*:[{period*, total_bookings*:number, completed*:number, cancelled*:number}]}`
+
+## Modules > Booking > Export
+Export booking data (bookings, resources, customers) in JSON or CSV format.
+
+### GET /modules/booking/export/bookings - Export bookings | KEY
+Query: ?from ?to ?status ?format
+200: `[{id*, booking_number*, status*, resource_id*, customer_id*, start_time*, end_time*, duration_minutes*, title*, created_at*}]`
+
+### GET /modules/booking/export/customers - Export booking customers | KEY
+Query: ?from ?to ?format
+200: `[{id*, email*, name*, total_bookings*:number, created_at*}]`
+
+### GET /modules/booking/export/resources - Export booking resources | KEY
+Query: ?type ?format
+200: `[{id*, name*, type*, capacity*:number, enabled*:boolean, created_at*}]`
+
+## Modules > Messaging > Settings
+Per-project messaging configuration: participant limits, message length, retention, reactions, and conversation numbering.
+
+### GET /modules/messaging/settings - Get messaging settings | KEY
+200: `{id*, project_id*, max_participants_per_conversation*:number, max_message_length*:number, message_retention_days*, allow_reactions*:boolean, conversation_number_prefix*, created_at*}`
+
+### PATCH /modules/messaging/settings - Update messaging settings | KEY
+Body: `{max_participants_per_conversation:integer, max_message_length:integer, message_retention_days, allow_reactions:boolean, conversation_number_prefix}`
+200: `{id*, project_id*, max_participants_per_conversation*:number, max_message_length*:number, message_retention_days*, allow_reactions*:boolean, conversation_number_prefix*, created_at*}`
+
+## Modules > Messaging > Conversations
+Conversations with status lifecycle: open → archived / closed. Supports direct and group types with auto-numbering.
+
+### POST /modules/messaging/conversations - Create a conversation | KEY
+Body: `{type, title, description, metadata:{}}`
+
+### GET /modules/messaging/conversations - List conversations | KEY
+Query: ?type ?status ?limit:integer ?cursor
+200: `{items*:[{id*, project_id*, conversation_number*, type*, title*, description*, status*, last_message_at*, message_count*:number, participant_count*:number, metadata*, updated_at*, created_at*}], next_cursor*}`
+
+### GET /modules/messaging/conversations/{conversation_id} - Get a conversation | KEY
+Path: :conversation_id
+200: `{id*, project_id*, conversation_number*, type*, title*, description*, status*, last_message_at*, message_count*:number, participant_count*:number, metadata*, updated_at*, created_at*}`
+
+### PATCH /modules/messaging/conversations/{conversation_id} - Update a conversation | KEY
+Path: :conversation_id
+Body: `{title, description, metadata:{}}`
+200: `{id*, project_id*, conversation_number*, type*, title*, description*, status*, last_message_at*, message_count*:number, participant_count*:number, metadata*, updated_at*, created_at*}`
+
+### DELETE /modules/messaging/conversations/{conversation_id} - Delete a conversation | KEY
+Path: :conversation_id
+200: `{deleted*:boolean}`
+
+### POST /modules/messaging/conversations/{conversation_id}/archive - Archive a conversation | KEY
+Path: :conversation_id
+200: `{id*, project_id*, conversation_number*, type*, title*, description*, status*, last_message_at*, message_count*:number, participant_count*:number, metadata*, updated_at*, created_at*}`
+
+### POST /modules/messaging/conversations/{conversation_id}/close - Close a conversation | KEY
+Path: :conversation_id
+200: `{id*, project_id*, conversation_number*, type*, title*, description*, status*, last_message_at*, message_count*:number, participant_count*:number, metadata*, updated_at*, created_at*}`
+
+### POST /modules/messaging/conversations/{conversation_id}/reopen - Reopen a conversation | KEY
+Path: :conversation_id
+200: `{id*, project_id*, conversation_number*, type*, title*, description*, status*, last_message_at*, message_count*:number, participant_count*:number, metadata*, updated_at*, created_at*}`
+
+## Modules > Messaging > Participants
+Manage conversation participants with roles (owner, member, readonly) and read receipts.
+
+### POST /modules/messaging/conversations/{conversation_id}/participants - Add a participant | KEY
+Path: :conversation_id
+Body: `{external_id*, display_name*, role, metadata:{}}`
+
+### GET /modules/messaging/conversations/{conversation_id}/participants - List participants | KEY
+Path: :conversation_id
+200: `{items*:[{id*, project_id*, conversation_id*, external_id*, display_name*, role*, last_read_at*, metadata*, created_at*}], next_cursor*}`
+
+### PATCH /modules/messaging/conversations/{conversation_id}/participants/{participant_id} - Update a participant | KEY
+Path: :conversation_id :participant_id
+Body: `{display_name, role, last_read_at, metadata:{}}`
+200: `{id*, project_id*, conversation_id*, external_id*, display_name*, role*, last_read_at*, metadata*, created_at*}`
+
+### DELETE /modules/messaging/conversations/{conversation_id}/participants/{participant_id} - Remove a participant | KEY
+Path: :conversation_id :participant_id
+200: `{deleted*:boolean}`
+
+## Modules > Messaging > Messages
+Send, list, edit, and soft-delete messages within conversations. Validates body length against project settings.
+
+### POST /modules/messaging/conversations/{conversation_id}/messages - Send a message | KEY
+Path: :conversation_id
+Body: `{participant_id*, type, body*, reply_to, metadata:{}}`
+
+### GET /modules/messaging/conversations/{conversation_id}/messages - List messages | KEY
+Path: :conversation_id
+Query: ?before ?after ?limit:integer ?cursor
+200: `{items*:[{id*, project_id*, conversation_id*, participant_id*, type*, body*, reply_to*, edited_at*, deleted_at*, metadata*, created_at*}], next_cursor*}`
+
+### GET /modules/messaging/conversations/{conversation_id}/messages/{message_id} - Get a message | KEY
+Path: :conversation_id :message_id
+200: `{id*, project_id*, conversation_id*, participant_id*, type*, body*, reply_to*, edited_at*, deleted_at*, metadata*, created_at*}`
+
+### PATCH /modules/messaging/conversations/{conversation_id}/messages/{message_id} - Edit a message | KEY
+Path: :conversation_id :message_id
+Body: `{body*}`
+200: `{id*, project_id*, conversation_id*, participant_id*, type*, body*, reply_to*, edited_at*, deleted_at*, metadata*, created_at*}`
+
+### DELETE /modules/messaging/conversations/{conversation_id}/messages/{message_id} - Delete a message | KEY
+Path: :conversation_id :message_id
+200: `{deleted*:boolean}`
+
+## Modules > Messaging > Reactions
+Add and remove emoji reactions on messages. One reaction per participant per emoji per message.
+
+### POST /modules/messaging/messages/{message_id}/reactions - Add a reaction | KEY
+Path: :message_id
+Body: `{participant_id*, emoji*}`
+
+### DELETE /modules/messaging/messages/{message_id}/reactions/{reaction_id} - Remove a reaction | KEY
+Path: :message_id :reaction_id
+200: `{deleted*:boolean}`
+
+## Modules > Messaging > Webhooks
+Manage webhooks for messaging-specific event topics (conversations, participants, messages).
+
+### GET /modules/messaging/webhooks - List messaging webhooks | KEY
+200: `{items*:[{id*, name*, url*, topics*:string[], enabled*:boolean, success_count*:number, failure_count*:number, last_attempted_at*, last_status*, created_at*}]}`
+
+### POST /modules/messaging/webhooks - Create a messaging webhook | KEY
+Body: `{name*, url*, topics*:string[], secret}`
+
+## Modules > Messaging > Analytics
+Messaging analytics: conversation counts, message volumes, and time-series data.
+
+### GET /modules/messaging/analytics/summary - Get messaging analytics summary | KEY
+Query: ?from ?to
+200: `{total_conversations*:number, total_messages*:number, total_participants*:number, active_conversations*:number}`
+
+### GET /modules/messaging/analytics/by-conversation - Get messages by conversation | KEY
+Query: ?from ?to
+200: `{conversations*:[{conversation_id*, message_count*:number, participant_count*:number}]}`
+
+### GET /modules/messaging/analytics/by-period - Get messages by period | KEY
+Query: ?from ?to ?group_by
+200: `{series*:[{period*, total_messages*:number}]}`
+
+## Modules > Messaging > Export
+Export messaging data (conversations, messages) in JSON or CSV format.
+
+### GET /modules/messaging/export/conversations - Export conversations | KEY
+Query: ?from ?to ?status ?format
+200: `[{id*, conversation_number*, type*, title*, status*, message_count*:number, participant_count*:number, created_at*}]`
+
+### GET /modules/messaging/export/messages - Export messages | KEY
+Query: ?from ?to ?conversation_id ?format
+200: `[{id*, conversation_id*, participant_id*, type*, body*, created_at*}]`
+
 ## Core > Organizations
 Create and manage organizations.
 
@@ -1244,34 +1905,6 @@ Health check, API docs, OpenAPI specification, and AI-first documentation (agent
 ### GET /robots.txt - Crawler directives (robots.txt) | NONE
 
 ### GET /sitemap.xml - XML sitemap | NONE
-
-## Modules > Delivery > Dispatch Rules
-
-### POST /modules/delivery/dispatch-rules - Create a dispatch rule | KEY
-Body: `{name*, priority*:integer, conditions*:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action*:{strategy*, fallback}, enabled:boolean, metadata}`
-
-### GET /modules/delivery/dispatch-rules - List dispatch rules | KEY
-200: `{rules*:[{id*, project_id*, name*, priority*:number, conditions*:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action*:{strategy*, fallback}, enabled*:boolean, metadata*, created_at*}]}`
-
-### GET /modules/delivery/dispatch-rules/{rule_id} - Get a dispatch rule | KEY
-Path: :rule_id
-200: `{id*, project_id*, name*, priority*:number, conditions*:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action*:{strategy*, fallback}, enabled*:boolean, metadata*, created_at*}`
-
-### PATCH /modules/delivery/dispatch-rules/{rule_id} - Update a dispatch rule | KEY
-Path: :rule_id
-Body: `{name, priority:integer, conditions:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action:{strategy*, fallback}, enabled:boolean, metadata}`
-200: `{id*, project_id*, name*, priority*:number, conditions*:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action*:{strategy*, fallback}, enabled*:boolean, metadata*, created_at*}`
-
-### DELETE /modules/delivery/dispatch-rules/{rule_id} - Delete a dispatch rule | KEY
-Path: :rule_id
-
-### POST /modules/delivery/dispatch-rules/evaluate - Evaluate dispatch rules (dry-run) | KEY
-Body: `{lat*:number, lng*:number, time}`
-200: `{matched*:boolean, rule:{id*, project_id*, name*, priority*:number, conditions*:{zone_ids:string[], time_window:{start*, end*}, max_radius_km:number}, action*:{strategy*, fallback}, enabled*:boolean, metadata*, created_at*}}`
-
-### POST /modules/delivery/auto-dispatch - Auto-dispatch an order using rules | KEY
-Body: `{order_id*}`
-200: `{assigned*:boolean, driver_id, rule_id, reason, queued:boolean, fallback_used:boolean}`
 
 ## Route Surface Appendix
 
