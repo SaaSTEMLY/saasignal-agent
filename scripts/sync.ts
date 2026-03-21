@@ -12,7 +12,7 @@ const AGENT_DIR = path.resolve(import.meta.dir, "..");
 const ETAG_CACHE_PATH = path.join(AGENT_DIR, "scripts/.etag-cache.json");
 
 const SKILL_FRONTMATTER = `---
-description: Operate the SaaSignal serverless infrastructure API — KV, Channels, Jobs, Storage, AI, Logistics, Delivery — via MCP, REST, SDK, or CLI
+description: Operate the SaaSignal serverless infrastructure API — KV, Channels, Jobs, Storage, AI, Logistics, Delivery, Commerce, Booking, Messaging — via MCP, REST, SDK, or CLI
 disable-model-invocation: true
 ---
 
