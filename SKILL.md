@@ -54,8 +54,7 @@ Use this document when an agent needs to discover or operate SaaSignal without g
 - Need docs for another agent or coding assistant: share `https://api.saasignal.saastemly.com/skills/saasignal` first, then `https://api.saasignal.saastemly.com/llms-full.txt` and `https://api.saasignal.saastemly.com/api/openapi.json` as deeper references.
 
 ## Credential and scope guide
-- `mcp_at_...`: OAuth access token for `/mcp` only.
-- `api_at_...`: OAuth access token for the regular HTTP API.
+- OAuth JWT (`eyJ...`): user-level OAuth access token for both `/mcp` and the regular HTTP API. Grants access across all user's organizations.
 - `sk_live_...`: project API key for server-to-server HTTP calls and manual MCP fallback.
 - `bt_...`: short-lived browser token for browser JavaScript against the HTTP API.
 - `pt_...`: portal token used by the SaaSignal frontend/dashboard for control-plane flows.
